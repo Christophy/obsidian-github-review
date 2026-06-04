@@ -1,0 +1,319 @@
+/* GitHub Review plugin styles. Uses Obsidian theme variables so it adapts to light/dark. */
+
+/* ---------- review panel ---------- */
+.ghr-review-view {
+    padding: var(--size-4-5) var(--size-4-6);
+    line-height: var(--line-height-normal);
+}
+/* Center content in a readable column using Obsidian's own width variable, so
+   it follows the user's "Readable line length" setting (--file-line-width). */
+.ghr-review-view > * {
+    max-width: var(--file-line-width, 700px);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.ghr-header {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: var(--size-4-3);
+    margin-bottom: var(--size-4-5);
+}
+.ghr-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--size-4-2);
+}
+.ghr-title {
+    margin: 0 0 var(--size-4-2);
+}
+.ghr-refresh {
+    flex: none;
+}
+.ghr-meta {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.ghr-badge {
+    display: inline-block;
+    padding: 0 var(--size-4-2);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-semibold);
+    color: var(--text-on-accent);
+    background: var(--text-muted);
+    text-transform: capitalize;
+    margin-right: var(--size-4-1);
+}
+.ghr-badge-open {
+    background: var(--color-green);
+}
+.ghr-badge-closed {
+    background: var(--color-red);
+}
+.ghr-badge-merged {
+    background: var(--color-purple);
+}
+.ghr-badge-draft {
+    background: var(--background-modifier-border);
+    color: var(--text-normal);
+}
+
+/* section spacing + headings */
+.ghr-body,
+.ghr-files,
+.ghr-comments,
+.ghr-threads {
+    margin-bottom: var(--size-4-8);
+}
+.ghr-files h4,
+.ghr-comments h4,
+.ghr-threads h4 {
+    margin-bottom: var(--size-4-3);
+    padding-bottom: var(--size-4-1);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* changed files (markdown rendered, others as a diff) */
+.ghr-file {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    margin-bottom: var(--size-4-3);
+    overflow: hidden;
+}
+.ghr-file-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding: var(--size-4-2) var(--size-4-3);
+    background: var(--background-secondary);
+    cursor: pointer;
+}
+.ghr-file-chevron {
+    display: inline-flex;
+    color: var(--text-muted);
+}
+.ghr-file-name {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-small);
+}
+.ghr-file-stats {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.ghr-file-viewed {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    cursor: pointer;
+}
+.ghr-file-body {
+    padding: var(--size-4-3) var(--size-4-4);
+}
+.ghr-diff .token.inserted {
+    color: var(--color-green);
+}
+.ghr-diff .token.deleted {
+    color: var(--color-red);
+}
+
+/* comments + inline threads: avatar + card with a byline header */
+.ghr-comment {
+    display: flex;
+    gap: var(--size-4-2);
+    margin-bottom: var(--size-4-3);
+}
+.ghr-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex: none;
+    object-fit: cover;
+}
+.ghr-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-semibold);
+}
+.ghr-comment-main {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    overflow: hidden;
+}
+.ghr-comment-head {
+    padding: var(--size-4-1) var(--size-4-3);
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: var(--font-ui-small);
+}
+.ghr-comment-author {
+    font-weight: var(--font-semibold);
+}
+.ghr-comment-meta {
+    color: var(--text-muted);
+}
+.ghr-comment-body {
+    padding: var(--size-4-2) var(--size-4-3);
+}
+
+/* comment box + review actions */
+.ghr-comment-box,
+.ghr-review-actions {
+    position: relative;
+    margin-top: var(--size-4-5);
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: var(--size-4-4);
+}
+
+/* @mention autocomplete */
+.ghr-mention-dropdown {
+    position: absolute;
+    z-index: var(--layer-popover);
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow-s);
+    max-height: 180px;
+    overflow-y: auto;
+    min-width: 180px;
+    padding: var(--size-4-1);
+}
+.ghr-mention-item {
+    padding: var(--size-4-1) var(--size-4-2);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+}
+.ghr-mention-item-active,
+.ghr-mention-item:hover {
+    background: var(--background-modifier-hover);
+}
+.ghr-comment-input,
+.ghr-review-body {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+    margin-bottom: var(--size-4-3);
+}
+.ghr-comment-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--size-4-2);
+}
+.ghr-review-toggle {
+    margin-top: var(--size-4-1);
+}
+.ghr-review-panel {
+    position: relative;
+    margin-top: var(--size-4-3);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    padding: var(--size-4-4);
+    background: var(--background-primary);
+}
+.ghr-review-heading {
+    margin: 0 0 var(--size-4-2);
+}
+.ghr-review-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1);
+    margin-bottom: var(--size-4-3);
+}
+.ghr-review-option {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    cursor: pointer;
+}
+.ghr-review-option-disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+.ghr-approve-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    margin: 0 0 var(--size-4-2) var(--size-4-5);
+}
+
+/* ---------- queue sidebar ---------- */
+.ghr-queue-view {
+    padding: var(--size-4-3);
+}
+.ghr-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--size-4-3);
+}
+.ghr-queue-header h4 {
+    margin: 0;
+    word-break: break-word;
+}
+.ghr-queue-sub {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.ghr-tabs {
+    display: flex;
+    gap: var(--size-4-1);
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: var(--size-4-2);
+}
+.ghr-tab {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    padding: var(--size-4-1) var(--size-4-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+.ghr-tab:hover {
+    color: var(--text-normal);
+}
+.ghr-tab-active {
+    color: var(--text-normal);
+    font-weight: var(--font-semibold);
+    border-bottom-color: var(--interactive-accent);
+}
+.ghr-queue-repo {
+    font-size: var(--font-ui-smaller);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin: var(--size-4-4) 0 var(--size-4-1);
+}
+.ghr-queue-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding: var(--size-4-2);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+}
+.ghr-queue-item:hover {
+    background: var(--background-modifier-hover);
+}
+.ghr-queue-item-closed {
+    opacity: 0.55;
+}
+.ghr-queue-icon {
+    display: inline-flex;
+    color: var(--text-muted);
+}
+.ghr-queue-empty,
+.ghr-review-empty {
+    color: var(--text-muted);
+    padding: var(--size-4-2) 0;
+}

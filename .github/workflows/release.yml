@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package the plugin
+        run: |
+          mkdir -p dist/github-review
+          cp main.js manifest.json styles.css dist/github-review/
+          (cd dist && zip -r github-review.zip github-review)
+
+      - name: Create GitHub release with artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Manual install: copy main.js, manifest.json and styles.css into <vault>/.obsidian/plugins/github-review/ (or unzip github-review.zip there), then enable the plugin in Community plugins." \
+            main.js manifest.json styles.css dist/github-review.zip
