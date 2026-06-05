@@ -3,8 +3,13 @@ import { describe, it } from "mocha";
 import { expect } from "chai";
 import { QueueService } from "../../src/core/queue-service";
 import { ReviewService } from "../../src/core/review-service";
-import type { GitHubClient } from "../../src/github/client";
+import { IssueService } from "../../src/core/issue-service";
+import { GitHubError, type GitHubClient } from "../../src/github/client";
 import type { Ref } from "../../src/core/model";
+
+function base64(text: string): string {
+    return Buffer.from(text, "utf-8").toString("base64");
+}
 
 function asClient(overrides: Partial<GitHubClient>): GitHubClient {
     return overrides as unknown as GitHubClient;
@@ -160,5 +165,175 @@ describe("ReviewService.submitReview", () => {
         });
         await new ReviewService(client).submitReview(PR_REF, "APPROVE", "");
         expect(payload).to.deep.equal({ event: "APPROVE", body: "" });
+    });
+});
+
+const ISSUE_REF: Ref = { owner: "acme", repo: "widgets", number: 8, type: "issue" };
+
+describe("ReviewService.fetchIssue", () => {
+    it("loads the issue and its comments into a domain object", async () => {
+        const seen: { num?: number; commentsNum?: number } = {};
+        const client = asClient({
+            getIssue: async (_o: string, _r: string, num: number) => {
+                seen.num = num;
+                return {
+                    number: 8,
+                    title: "A bug report",
+                    state: "open",
+                    body: "Steps to reproduce.",
+                    user: { login: "widget-bot[bot]", avatar_url: "a" },
+                    labels: [{ name: "bug" }, { name: "triage" }],
+                    html_url: "https://github.com/acme/widgets/issues/8",
+                };
+            },
+            listIssueComments: async (_o: string, _r: string, num: number) => {
+                seen.commentsNum = num;
+                return [
+                    {
+                        id: 11,
+                        user: { login: "carol", avatar_url: "c" },
+                        body: "Confirmed",
+                        created_at: "2026-06-02T00:00:00Z",
+                        html_url: "u",
+                    },
+                ];
+            },
+        });
+
+        const issue = await new ReviewService(client).fetchIssue(ISSUE_REF);
+
+        // both endpoints are queried for the right issue number
+        expect(seen).to.deep.equal({ num: 8, commentsNum: 8 });
+        expect(issue.ref).to.deep.equal(ISSUE_REF);
+        expect(issue.title).to.equal("A bug report");
+        expect(issue.author).to.equal("widget-bot[bot]");
+        expect(issue.state).to.equal("open");
+        expect(issue.body).to.equal("Steps to reproduce.");
+        expect(issue.labels).to.deep.equal(["bug", "triage"]);
+        expect(issue.comments).to.have.length(1);
+        expect(issue.comments[0]!.author).to.equal("carol");
+        expect(issue.comments[0]!.body).to.equal("Confirmed");
+    });
+});
+
+describe("ReviewService write actions", () => {
+    it("postComment returns the created comment mapped for optimistic display", async () => {
+        const client = asClient({
+            createIssueComment: async (_o: string, _r: string, _n: number, body: string) => ({
+                id: 99,
+                user: { login: "reviewer", avatar_url: "x" },
+                body,
+                created_at: "2026-06-04T00:00:00Z",
+                html_url: "u",
+            }),
+        });
+        const comment = await new ReviewService(client).postComment(ISSUE_REF, "looks good");
+        expect(comment.id).to.equal(99);
+        expect(comment.author).to.equal("reviewer");
+        expect(comment.body).to.equal("looks good");
+    });
+
+    it("closeIssue sets the issue state to closed for the right ref", async () => {
+        let seen: { owner?: string; repo?: string; num?: number; state?: string } = {};
+        const client = asClient({
+            setIssueState: async (owner: string, repo: string, num: number, state: string) => {
+                seen = { owner, repo, num, state };
+                return {};
+            },
+        });
+        await new ReviewService(client).closeIssue(ISSUE_REF);
+        expect(seen).to.deep.equal({ owner: "acme", repo: "widgets", num: 8, state: "closed" });
+    });
+});
+
+describe("IssueService.listTemplates", () => {
+    it("parses template files and skips config.yml and sub-directories", async () => {
+        const client = asClient({
+            listDir: async (_o: string, _r: string, path: string) => {
+                expect(path).to.equal(".github/ISSUE_TEMPLATE");
+                return [
+                    { name: "bug.md", path: ".github/ISSUE_TEMPLATE/bug.md", type: "file" },
+                    { name: "config.yml", path: ".github/ISSUE_TEMPLATE/config.yml", type: "file" },
+                    { name: "nested", path: ".github/ISSUE_TEMPLATE/nested", type: "dir" },
+                    { name: "README.txt", path: ".github/ISSUE_TEMPLATE/README.txt", type: "file" },
+                ];
+            },
+            getContent: async (_o: string, _r: string, p: string) => {
+                expect(p).to.equal(".github/ISSUE_TEMPLATE/bug.md");
+                return {
+                    content: base64("---\nname: Bug\nlabels: [bug]\n---\nBody."),
+                    encoding: "base64",
+                };
+            },
+        });
+        const templates = await new IssueService(client).listTemplates("acme", "widgets");
+        expect(templates).to.have.length(1);
+        expect(templates[0]!.name).to.equal("Bug");
+        expect(templates[0]!.labels).to.deep.equal(["bug"]);
+        expect(templates[0]!.body).to.equal("Body.");
+    });
+
+    it("returns no templates when the repo has no ISSUE_TEMPLATE directory (404)", async () => {
+        const client = asClient({
+            listDir: async () => {
+                throw new GitHubError("Not Found", 404, "u");
+            },
+        });
+        expect(await new IssueService(client).listTemplates("acme", "widgets")).to.deep.equal([]);
+    });
+
+    it("propagates non-404 errors", async () => {
+        const client = asClient({
+            listDir: async () => {
+                throw new GitHubError("Server error", 500, "u");
+            },
+        });
+        try {
+            await new IssueService(client).listTemplates("acme", "widgets");
+            expect.fail("should have thrown");
+        } catch (err) {
+            expect((err as GitHubError).status).to.equal(500);
+        }
+    });
+});
+
+describe("IssueService.createIssue", () => {
+    it("posts title/body/labels and returns a ref to the new issue", async () => {
+        let seen: unknown;
+        const client = asClient({
+            createIssue: async (
+                owner: string,
+                repo: string,
+                title: string,
+                body: string,
+                labels: string[],
+            ) => {
+                seen = { owner, repo, title, body, labels };
+                return {
+                    number: 42,
+                    title,
+                    state: "open",
+                    body,
+                    user: null,
+                    labels: [],
+                    html_url: "u",
+                };
+            },
+        });
+        const ref = await new IssueService(client).createIssue(
+            "acme",
+            "widgets",
+            "New spec question",
+            "Details here",
+            ["question"],
+        );
+        expect(seen).to.deep.equal({
+            owner: "acme",
+            repo: "widgets",
+            title: "New spec question",
+            body: "Details here",
+            labels: ["question"],
+        });
+        expect(ref).to.deep.equal({ owner: "acme", repo: "widgets", number: 42, type: "issue" });
     });
 });

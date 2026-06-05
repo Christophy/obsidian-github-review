@@ -2,6 +2,7 @@ import type { ReviewEvent } from "../core/model";
 import type {
     RawComment,
     RawContent,
+    RawContentItem,
     RawIssue,
     RawPull,
     RawPullFile,
@@ -125,11 +126,37 @@ export class GitHubClient {
         }) as Promise<RawReviewComment[]>;
     }
 
-    getContent(owner: string, repo: string, filePath: string, ref: string): Promise<RawContent> {
+    /** A file's content. Omit `ref` to read the repo's default branch (e.g. for templates). */
+    getContent(owner: string, repo: string, filePath: string, ref?: string): Promise<RawContent> {
         const encoded = filePath.split("/").map(encodeURIComponent).join("/");
-        return this.send("GET", `/repos/${owner}/${repo}/contents/${encoded}`, {
-            ref,
-        }) as Promise<RawContent>;
+        return this.send(
+            "GET",
+            `/repos/${owner}/${repo}/contents/${encoded}`,
+            ref ? { ref } : undefined,
+        ) as Promise<RawContent>;
+    }
+
+    /** List a directory via the Contents API (404s if the path doesn't exist). */
+    listDir(owner: string, repo: string, dirPath: string): Promise<RawContentItem[]> {
+        const encoded = dirPath.split("/").map(encodeURIComponent).join("/");
+        return this.send(
+            "GET",
+            `/repos/${owner}/${repo}/contents/${encoded}`,
+        ) as Promise<RawContentItem[]>;
+    }
+
+    createIssue(
+        owner: string,
+        repo: string,
+        title: string,
+        body: string,
+        labels: string[] = [],
+    ): Promise<RawIssue> {
+        return this.send("POST", `/repos/${owner}/${repo}/issues`, undefined, {
+            title,
+            body,
+            labels,
+        }) as Promise<RawIssue>;
     }
 
     createIssueComment(owner: string, repo: string, num: number, body: string): Promise<RawComment> {
@@ -214,6 +241,18 @@ export class GitHubClient {
             return res.json;
         }
         throw toGitHubError(res, url, rateLimit);
+    }
+}
+
+/** Parse a response body to JSON, tolerating an empty body (e.g. 304 Not Modified). */
+export function parseJsonSafe(text: string): unknown {
+    if (!text) {
+        return null;
+    }
+    try {
+        return JSON.parse(text);
+    } catch {
+        return null;
     }
 }
 

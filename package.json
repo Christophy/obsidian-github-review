@@ -11,7 +11,13 @@
         "test:unit": "tsc --noEmit && mocha",
         "test:e2e": "npm run build && wdio run ./wdio.conf.mts"
     },
-    "keywords": ["obsidian", "github", "review", "pull-request", "issue"],
+    "keywords": [
+        "obsidian",
+        "github",
+        "review",
+        "pull-request",
+        "issue"
+    ],
     "author": "Christophy",
     "license": "MIT",
     "repository": {
@@ -45,5 +51,8 @@
         "typescript-eslint": "^8.59.3",
         "wdio-obsidian-reporter": "^3.0.3",
         "wdio-obsidian-service": "^3.0.3"
+    },
+    "dependencies": {
+        "yaml": "^2.9.0"
     }
 }

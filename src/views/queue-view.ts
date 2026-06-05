@@ -11,6 +11,7 @@ export interface QueueViewDeps {
     getShowClosed: () => boolean;
     getPollSeconds: () => number;
     openReview: (ref: Ref) => Promise<void>;
+    newIssue: () => Promise<void>;
 }
 
 /** Sidebar of the scoped repo(s)' issues & PRs, split into PR / Issue tabs. */
@@ -102,7 +103,12 @@ export class QueueView extends ItemView {
             cls: "ghr-queue-sub",
             text: this.deps.getShowClosed() ? "All issues & PRs" : "Open issues & PRs",
         });
-        header.createEl("button", { text: "Refresh" }).addEventListener("click", () => {
+        const actions = header.createDiv({ cls: "ghr-queue-actions" });
+        actions.createEl("button", { cls: "mod-cta", text: "New issue" }).addEventListener(
+            "click",
+            () => void this.deps.newIssue(),
+        );
+        actions.createEl("button", { text: "Refresh" }).addEventListener("click", () => {
             void this.refresh();
         });
     }

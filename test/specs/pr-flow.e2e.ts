@@ -9,7 +9,7 @@ import { describe, it, before } from "mocha";
  * Drives the whole plugin stack inside a real Obsidian, with the network faked
  * via the __GHR_TEST_HTTP__ seam so data is deterministic and no token is needed.
  */
-describe("GitHub Review – PR review flow (stubbed network)", function () {
+describe("GitHub Review – review flows (stubbed network)", function () {
     before(async function () {
         await browser.executeObsidian(async ({ app }) => {
             const calls: { url: string; method: string; body?: string }[] = [];
@@ -24,6 +24,19 @@ describe("GitHub Review – PR review flow (stubbed network)", function () {
 
                 function route(url: any, m: any): any {
                     if (url.endsWith("/user")) return { login: "reviewer", avatar_url: "" };
+                    if (url.split("?")[0].endsWith("/issues") && m === "POST") {
+                        // create issue -> returns the new issue (#42)
+                        const posted = JSON.parse(req.body ?? "{}");
+                        return {
+                            number: 42,
+                            title: posted.title,
+                            state: "open",
+                            body: posted.body,
+                            user: { login: "reviewer", avatar_url: "" },
+                            labels: (posted.labels ?? []).map((n: string) => ({ name: n })),
+                            html_url: "https://github.com/acme/widgets/issues/42",
+                        };
+                    }
                     if (url.split("?")[0].endsWith("/issues")) {
                         // repo issues list (returns open issues AND PRs)
                         return [
@@ -87,6 +100,7 @@ describe("GitHub Review – PR review flow (stubbed network)", function () {
                         };
                     }
                     if (url.includes("/issues/7/comments")) {
+                        // base comment plus any the test injects to simulate new server data
                         return [
                             {
                                 id: 11,
@@ -95,6 +109,52 @@ describe("GitHub Review – PR review flow (stubbed network)", function () {
                                 created_at: "2026-06-02T00:00:00Z",
                                 html_url: "u",
                             },
+                            ...((window as any).__ghrExtra7 ?? []),
+                        ];
+                    }
+                    // issue #8 detail (a real issue, not a PR)
+                    if (url.includes("/issues/8/comments")) return [];
+                    if (url.split("?")[0].endsWith("/issues/8")) {
+                        return {
+                            number: 8,
+                            title: "A bug report",
+                            state: "open",
+                            body: "Steps to **reproduce** the bug.",
+                            user: { login: "widget-bot[bot]", avatar_url: "", type: "Bot" },
+                            labels: [{ name: "bug" }],
+                            html_url: "https://github.com/acme/widgets/issues/8",
+                        };
+                    }
+                    // created issue #42 (opened after the new-issue flow)
+                    if (url.includes("/issues/42/comments")) return [];
+                    if (url.split("?")[0].endsWith("/issues/42")) {
+                        return {
+                            number: 42,
+                            title: "[Bug]:",
+                            state: "open",
+                            body: "## Steps",
+                            user: { login: "reviewer", avatar_url: "" },
+                            labels: [{ name: "bug" }],
+                            html_url: "https://github.com/acme/widgets/issues/42",
+                        };
+                    }
+                    // issue templates (.github/ISSUE_TEMPLATE)
+                    if (url.includes("/contents/.github/ISSUE_TEMPLATE/bug_report.md")) {
+                        return {
+                            content: btoa(
+                                "---\nname: Bug report\ntitle: '[Bug]: '\nlabels: [bug]\n---\n## Steps\n\n1. ",
+                            ),
+                            encoding: "base64",
+                        };
+                    }
+                    if (url.split("?")[0].endsWith("/contents/.github/ISSUE_TEMPLATE")) {
+                        return [
+                            {
+                                name: "bug_report.md",
+                                path: ".github/ISSUE_TEMPLATE/bug_report.md",
+                                type: "file",
+                            },
+                            { name: "config.yml", path: ".github/ISSUE_TEMPLATE/config.yml", type: "file" },
                         ];
                     }
                     if (url.includes("/contents/docs/design.md")) {
@@ -376,5 +436,199 @@ describe("GitHub Review – PR review flow (stubbed network)", function () {
             return input instanceof HTMLInputElement ? input.disabled : null;
         });
         expect(approveDisabled).toBe(true);
+    });
+
+    it("opens an issue (not a PR): renders the body, a Close issue action, and no changed files", async () => {
+        await browser.executeObsidian(async ({ app }) => {
+            const plugin = (app as any).plugins.plugins["github-review"];
+            await plugin.openReview({ owner: "acme", repo: "widgets", number: 8, type: "issue" });
+        });
+        await browser.waitUntil(
+            () =>
+                browser.executeObsidian(({ app }) => {
+                    const leaf = (app.workspace as any)
+                        .getLeavesOfType("ghr-review")
+                        .find((l: any) => l.view?.ref?.number === 8);
+                    return (
+                        !!leaf &&
+                        leaf.view.contentEl.querySelector(".ghr-title")?.textContent === "A bug report"
+                    );
+                }),
+            { timeout: 8000, timeoutMsg: "issue #8 never rendered" },
+        );
+        const result = await browser.executeObsidian(({ app }) => {
+            const leaf = (app.workspace as any)
+                .getLeavesOfType("ghr-review")
+                .find((l: any) => l.view?.ref?.number === 8);
+            const root = leaf.view.contentEl as HTMLElement;
+            return {
+                body: (root.querySelector(".ghr-body") as HTMLElement)?.innerText ?? "",
+                secondary: root.querySelector(".ghr-comment-box .ghr-comment-secondary")?.textContent ?? "",
+                hasFiles: !!root.querySelector(".ghr-files"),
+            };
+        });
+        expect(result.body).toContain("reproduce");
+        // an issue closes with "Close issue", a PR with "Close pull request"
+        expect(result.secondary).toBe("Close issue");
+        // the "Changed files" section is PR-only
+        expect(result.hasFiles).toBe(false);
+    });
+
+    it("silent poll leaves the DOM (and a typed draft) untouched when nothing changed", async () => {
+        const result = await browser.executeObsidian(async ({ app }) => {
+            const leaf = (app.workspace as any)
+                .getLeavesOfType("ghr-review")
+                .find((l: any) => l.view?.ref?.number === 7);
+            const view = leaf.view;
+            const root = view.contentEl as HTMLElement;
+            await view.refresh(); // baseline render; records the data signature
+            // element identity tells us whether refresh rebuilt the DOM or left it intact
+            const titleBefore = root.querySelector(".ghr-title");
+            (root.querySelector(".ghr-comment-input") as HTMLTextAreaElement).value = "draft in progress";
+            await view.refresh({ silent: true }); // data unchanged -> must skip the rebuild
+            return {
+                notRebuilt: root.querySelector(".ghr-title") === titleBefore,
+                draftKept:
+                    (root.querySelector(".ghr-comment-input") as HTMLTextAreaElement).value ===
+                    "draft in progress",
+            };
+        });
+        expect(result.notRebuilt).toBe(true);
+        expect(result.draftKept).toBe(true);
+    });
+
+    it("silent poll rebuilds when the data changed but preserves the in-progress draft", async () => {
+        const result = await browser.executeObsidian(async ({ app }) => {
+            const leaf = (app.workspace as any)
+                .getLeavesOfType("ghr-review")
+                .find((l: any) => l.view?.ref?.number === 7);
+            const view = leaf.view;
+            const root = view.contentEl as HTMLElement;
+            await view.refresh(); // baseline
+            const titleBefore = root.querySelector(".ghr-title");
+            (root.querySelector(".ghr-comment-input") as HTMLTextAreaElement).value = "draft survives rebuild";
+            // a new comment appears on the server between polls
+            (window as any).__ghrExtra7 = [
+                {
+                    id: 77,
+                    user: { login: "dave", avatar_url: "" },
+                    body: "freshly arrived",
+                    created_at: "2026-06-05T00:00:00Z",
+                    html_url: "u",
+                },
+            ];
+            await view.refresh({ silent: true });
+            (window as any).__ghrExtra7 = []; // reset for any later test
+            const hasNew = Array.from(root.querySelectorAll(".ghr-comment-body")).some((el) =>
+                (el as HTMLElement).innerText.includes("freshly arrived"),
+            );
+            return {
+                rebuilt: root.querySelector(".ghr-title") !== titleBefore,
+                hasNew,
+                draftKept:
+                    (root.querySelector(".ghr-comment-input") as HTMLTextAreaElement).value ===
+                    "draft survives rebuild",
+            };
+        });
+        expect(result.rebuilt).toBe(true);
+        expect(result.hasNew).toBe(true);
+        expect(result.draftKept).toBe(true);
+    });
+
+    it("opens an item from a pasted GitHub URL via the command", async () => {
+        // clear existing review tabs so we can prove the URL flow created the view
+        await browser.executeObsidian(({ app }) => {
+            (app.workspace as any).getLeavesOfType("ghr-review").forEach((l: any) => l.detach());
+        });
+        await browser.executeObsidianCommand("github-review:open-by-url");
+        const input = $(".modal-container input[type='text']");
+        await input.waitForExist({ timeout: 5000 });
+        await browser.executeObsidian(() => {
+            const el = document.querySelector(
+                ".modal-container input[type='text']",
+            ) as HTMLInputElement;
+            el.value = "https://github.com/acme/widgets/pull/7";
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            const btn = Array.from(document.querySelectorAll(".modal-container button")).find(
+                (b) => b.textContent === "Open",
+            ) as HTMLButtonElement;
+            btn.click();
+        });
+        await browser.waitUntil(
+            () =>
+                browser.executeObsidian(
+                    ({ app }) =>
+                        !!(app.workspace as any)
+                            .getLeavesOfType("ghr-review")
+                            .find((l: any) => l.view?.ref?.number === 7),
+                ),
+            { timeout: 8000, timeoutMsg: "open-by-URL did not open PR #7" },
+        );
+    });
+
+    it("creates a new issue from a template (prefill + Write/Preview) and opens it", async () => {
+        await browser.executeObsidian(() => {
+            (window as any).__ghrCalls.length = 0;
+        });
+        await browser.executeObsidianCommand("github-review:new-issue");
+
+        // the modal opens once templates have loaded
+        await $(".ghr-new-issue .ghr-issue-title").waitForExist({ timeout: 8000 });
+
+        // choosing the template prefills the title and body
+        const prefilled = await browser.executeObsidian(() => {
+            const select = document.querySelector(".ghr-new-issue select") as HTMLSelectElement;
+            select.value = "0";
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            return {
+                title: (document.querySelector(".ghr-issue-title") as HTMLInputElement).value,
+                body: (document.querySelector(".ghr-issue-input") as HTMLTextAreaElement).value,
+            };
+        });
+        expect(prefilled.title).toBe("[Bug]: ");
+        expect(prefilled.body).toContain("## Steps");
+
+        // the Preview tab renders the Markdown body
+        await browser.executeObsidian(() => {
+            const tab = Array.from(document.querySelectorAll(".ghr-issue-tabs .ghr-tab")).find(
+                (t) => t.textContent === "Preview",
+            ) as HTMLButtonElement;
+            tab.click();
+        });
+        await $(".ghr-issue-preview h2").waitForExist({ timeout: 5000 });
+        await expect($(".ghr-issue-preview h2")).toHaveText("Steps");
+
+        // Create posts the issue with the template's title + labels
+        await browser.executeObsidian(() => {
+            (document.querySelector(".ghr-issue-submit") as HTMLButtonElement).click();
+        });
+        await browser.waitUntil(
+            () =>
+                browser.executeObsidian(() =>
+                    ((window as any).__ghrCalls as any[]).some(
+                        (c) => c.method === "POST" && c.url.split("?")[0].endsWith("/issues"),
+                    ),
+                ),
+            { timeout: 8000, timeoutMsg: "new issue was never POSTed" },
+        );
+        const post = await browser.executeObsidian(() =>
+            ((window as any).__ghrCalls as any[]).find(
+                (c) => c.method === "POST" && c.url.split("?")[0].endsWith("/issues"),
+            ),
+        );
+        expect(JSON.parse(post.body).title).toBe("[Bug]:");
+        expect(JSON.parse(post.body).labels).toEqual(["bug"]);
+
+        // the created issue (#42) opens in a review tab
+        await browser.waitUntil(
+            () =>
+                browser.executeObsidian(
+                    ({ app }) =>
+                        !!(app.workspace as any)
+                            .getLeavesOfType("ghr-review")
+                            .find((l: any) => l.view?.ref?.number === 42),
+                ),
+            { timeout: 8000, timeoutMsg: "created issue #42 did not open" },
+        );
     });
 });

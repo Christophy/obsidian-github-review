@@ -34,7 +34,9 @@ src/
 │   ├── format.ts            # relative-time formatting (Intl.RelativeTimeFormat)
 │   ├── queue-service.ts     # list a repo's issues & PRs
 │   ├── review-service.ts    # fetch an issue/PR; comment / submit review / close
-│   └── mention-service.ts   # discover repo bot @handles from issue/PR authors
+│   ├── mention-service.ts   # discover repo bot @handles from issue/PR authors
+│   ├── issue-service.ts     # list a repo's issue templates; create a new issue
+│   └── issue-template.ts    # parse Markdown templates / YAML issue forms → a starting point
 │
 ├── views/                   # layer 3: Obsidian ItemViews; each holds its own state
 │   ├── queue-view.ts        # sidebar: PR/Issue tabs, polling, click to open
@@ -45,7 +47,8 @@ src/
     ├── comment-box.ts       # comment textarea + Comment/secondary buttons
     ├── review-actions.ts    # "Review changes" → Comment/Approve/Request changes + Submit review
     ├── mention-autocomplete.ts  # @-mention dropdown on a textarea
-    └── url-prompt.ts         # modal to open an issue/PR by URL
+    ├── url-prompt.ts         # modal to open an issue/PR by URL
+    └── new-issue-modal.ts    # compose a new issue: template picker + Write/Preview body
 ```
 
 ## Dependency direction (acyclic, downward only)
@@ -72,6 +75,8 @@ No upward dependencies; views and services don't reference each other sideways.
 
 ## Unit-tested concerns
 
-`github-ref`, `git-remote`, `mappers`, `mentions`, `format`, the services, and the client's URL /
-error / ETag handling — all pure or fake-injected (mocha + chai). Views are covered by the
-WebdriverIO end-to-end suite against a real sandboxed Obsidian.
+`github-ref`, `git-remote`, `mappers`, `mentions`, `format`, `issue-template`, the services, and the
+client's URL / error / ETag / empty-body handling — all pure or fake-injected (mocha + chai). Views
+and the new-issue flow are covered by the WebdriverIO end-to-end suite against a real sandboxed
+Obsidian. Issue templates are parsed with the `yaml` package (the `js-yaml` alternative is banned by
+the lint config).

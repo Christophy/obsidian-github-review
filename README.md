@@ -12,6 +12,9 @@ is stored locally.
 
 Organised around the spec-review flow:
 
+- **Raise issues from templates** — open a new issue that follows the repo's issue templates
+  (Markdown templates and YAML issue forms), with a **Write / Preview** Markdown editor and
+  @mention autocomplete.
 - **Read specs comfortably** — PR Markdown files and issue/PR bodies & comments render as Markdown
   (not diffs); comments appear as cards with avatar, author, and relative time.
 - **See the whole change set** — every changed file in a PR: Markdown rendered, other files as a
@@ -83,6 +86,9 @@ Use a **fine-grained personal access token** scoped to the repos you review, wit
 
 - Open the **review queue** from the ribbon (git-pull-request icon) or the command
   *GitHub Review: Open review queue*.
+- Click **New issue** in the queue (or the command *GitHub Review: Create new issue*) to compose an
+  issue: pick a template (it pre-fills the title, labels and body), edit with **Write / Preview**
+  tabs, and create it — it opens straight away.
 - Switch between the **Pull requests** and **Issues** tabs; click an item to open it (reusing its
   tab if already open).
 - In a PR: read the description, expand/collapse each changed file, mark files **Viewed**, read

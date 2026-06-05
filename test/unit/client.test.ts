@@ -3,6 +3,7 @@ import { expect } from "chai";
 import {
     GitHubClient,
     GitHubError,
+    parseJsonSafe,
     type HttpRequest,
     type HttpResponse,
 } from "../../src/github/client";
@@ -145,6 +146,82 @@ describe("GitHubClient", () => {
         }
     });
 
+    describe("endpoint URL assembly", () => {
+        const cases: {
+            name: string;
+            run: (c: GitHubClient) => Promise<unknown>;
+            method: string;
+            pathAndQuery: string;
+            body?: Record<string, unknown>;
+        }[] = [
+            { name: "getViewer", run: (c) => c.getViewer(), method: "GET", pathAndQuery: "/user" },
+            {
+                name: "getIssue",
+                run: (c) => c.getIssue("o", "r", 5),
+                method: "GET",
+                pathAndQuery: "/repos/o/r/issues/5",
+            },
+            {
+                name: "listIssueComments",
+                run: (c) => c.listIssueComments("o", "r", 5),
+                method: "GET",
+                pathAndQuery: "/repos/o/r/issues/5/comments?per_page=100",
+            },
+            {
+                name: "listPullFiles",
+                run: (c) => c.listPullFiles("o", "r", 9),
+                method: "GET",
+                pathAndQuery: "/repos/o/r/pulls/9/files?per_page=100",
+            },
+            {
+                name: "listPullReviewComments",
+                run: (c) => c.listPullReviewComments("o", "r", 9),
+                method: "GET",
+                pathAndQuery: "/repos/o/r/pulls/9/comments?per_page=100",
+            },
+            {
+                name: "setIssueState",
+                run: (c) => c.setIssueState("o", "r", 5, "closed"),
+                method: "PATCH",
+                pathAndQuery: "/repos/o/r/issues/5",
+                body: { state: "closed" },
+            },
+            {
+                name: "createIssue",
+                run: (c) => c.createIssue("o", "r", "T", "B", ["x"]),
+                method: "POST",
+                pathAndQuery: "/repos/o/r/issues",
+                body: { title: "T", body: "B", labels: ["x"] },
+            },
+            {
+                name: "listDir",
+                run: (c) => c.listDir("o", "r", ".github/ISSUE_TEMPLATE"),
+                method: "GET",
+                pathAndQuery: "/repos/o/r/contents/.github/ISSUE_TEMPLATE",
+            },
+            {
+                name: "getContent without a ref",
+                run: (c) => c.getContent("o", "r", "T.md"),
+                method: "GET",
+                pathAndQuery: "/repos/o/r/contents/T.md",
+            },
+        ];
+
+        for (const tc of cases) {
+            it(`${tc.name} -> ${tc.method} ${tc.pathAndQuery}`, async () => {
+                const { client, http } = clientWith({ json: [] });
+                await tc.run(client);
+                const req = http.calls[0]!;
+                const url = new URL(req.url);
+                expect(req.method).to.equal(tc.method);
+                expect(url.pathname + url.search).to.equal(tc.pathAndQuery);
+                if (tc.body) {
+                    expect(JSON.parse(req.body ?? "{}")).to.deep.equal(tc.body);
+                }
+            });
+        }
+    });
+
     describe("ETag conditional caching", () => {
         function sequenceClient(responses: Partial<HttpResponse>[]) {
             const calls: HttpRequest[] = [];
@@ -179,5 +256,18 @@ describe("GitHubClient", () => {
             await client.getIssue("o", "r", 1);
             expect(await client.getIssue("o", "r", 1)).to.deep.equal({ n: 2 });
         });
+    });
+});
+
+describe("parseJsonSafe", () => {
+    it("returns null for an empty body (e.g. a 304 response) instead of throwing", () => {
+        expect(parseJsonSafe("")).to.equal(null);
+    });
+    it("returns null for whitespace or invalid JSON", () => {
+        expect(parseJsonSafe("   ")).to.equal(null);
+        expect(parseJsonSafe("{not json")).to.equal(null);
+    });
+    it("parses a valid JSON body", () => {
+        expect(parseJsonSafe('{"a":1}')).to.deep.equal({ a: 1 });
     });
 });

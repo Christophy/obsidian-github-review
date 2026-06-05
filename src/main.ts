@@ -1,14 +1,17 @@
 import { FileSystemAdapter, Notice, Plugin, requestUrl } from "obsidian";
 import { DEFAULT_SETTINGS, GitHubReviewSettingTab, type GitHubReviewSettings } from "./settings";
-import { GitHubClient, type HttpFn } from "./github/client";
+import { GitHubClient, parseJsonSafe, type HttpFn } from "./github/client";
 import { QueueService } from "./core/queue-service";
 import { ReviewService } from "./core/review-service";
 import { MentionService } from "./core/mention-service";
+import { IssueService } from "./core/issue-service";
 import { QueueView, VIEW_TYPE_QUEUE } from "./views/queue-view";
 import { ReviewView, VIEW_TYPE_REVIEW } from "./views/review-view";
 import { parseGitHubRef } from "./core/github-ref";
 import { readGitHubRemote } from "./git-detect";
 import { UrlPromptModal } from "./ui/url-prompt";
+import { NewIssueModal } from "./ui/new-issue-modal";
+import type { IssueTemplate } from "./core/issue-template";
 import type { Ref } from "./core/model";
 
 /**
@@ -30,13 +33,16 @@ const obsidianHttp: HttpFn = async (req) => {
         body: req.body,
         throw: false,
     });
-    return { status: res.status, headers: res.headers, text: res.text, json: res.json };
+    // Don't use res.json — its getter does JSON.parse(text) and throws on an empty
+    // body (e.g. a 304 Not Modified from an ETag conditional request).
+    return { status: res.status, headers: res.headers, text: res.text, json: parseJsonSafe(res.text) };
 };
 
 export default class GitHubReviewPlugin extends Plugin {
     settings: GitHubReviewSettings = { ...DEFAULT_SETTINGS };
     queueService: QueueService | null = null;
     reviewService: ReviewService | null = null;
+    issueService: IssueService | null = null;
 
     private client: GitHubClient | null = null;
     private viewerLogin: string | null = null;
@@ -59,6 +65,7 @@ export default class GitHubReviewPlugin extends Plugin {
                     getShowClosed: () => this.settings.showClosed,
                     getPollSeconds: () => this.settings.pollSeconds,
                     openReview: (ref) => this.openReview(ref),
+                    newIssue: () => this.newIssue(),
                 }),
         );
         this.registerView(
@@ -85,6 +92,11 @@ export default class GitHubReviewPlugin extends Plugin {
             id: "open-by-url",
             name: "Open issue or pull request by URL",
             callback: () => this.openByUrl(),
+        });
+        this.addCommand({
+            id: "new-issue",
+            name: "Create new issue",
+            callback: () => void this.newIssue(),
         });
 
         this.addSettingTab(new GitHubReviewSettingTab(this.app, this));
@@ -117,12 +129,14 @@ export default class GitHubReviewPlugin extends Plugin {
             this.client = new GitHubClient({ token: this.settings.token, request: obsidianHttp });
             this.queueService = new QueueService(this.client);
             this.reviewService = new ReviewService(this.client);
+            this.issueService = new IssueService(this.client);
             this.mentionService = new MentionService(this.client);
             void this.refreshViewer();
         } else {
             this.client = null;
             this.queueService = null;
             this.reviewService = null;
+            this.issueService = null;
             this.mentionService = null;
             this.viewerLogin = null;
         }
@@ -226,6 +240,50 @@ export default class GitHubReviewPlugin extends Plugin {
             } catch (err) {
                 new Notice((err as Error).message);
             }
+        }).open();
+    }
+
+    /** Compose and create a new issue in the queue's repo, following its templates. */
+    async newIssue(): Promise<void> {
+        const service = this.issueService;
+        if (!service) {
+            new Notice("Set your GitHub token in settings first.");
+            return;
+        }
+        const target = this.queueRepos()[0];
+        const [owner, repo] = target?.split("/") ?? [];
+        if (!owner || !repo) {
+            new Notice("No GitHub repo for this vault. Set a repository in settings.");
+            return;
+        }
+
+        // Load templates and @mention handles up front so the modal opens ready.
+        let templates: IssueTemplate[] = [];
+        let handles: string[] = [];
+        try {
+            [templates, handles] = await Promise.all([
+                service.listTemplates(owner, repo),
+                this.mentionHandlesFor({ owner, repo, number: 0, type: "issue" }),
+            ]);
+        } catch (err) {
+            new Notice(`Couldn't load issue templates: ${(err as Error).message}`);
+        }
+
+        new NewIssueModal(this.app, {
+            repoLabel: `${owner}/${repo}`,
+            templates,
+            getMentionHandles: () => handles,
+            onSubmit: async (title, body, labels) => {
+                try {
+                    const ref = await service.createIssue(owner, repo, title, body, labels);
+                    new Notice("Issue created");
+                    await this.openReview(ref);
+                    this.refreshQueueViews();
+                } catch (err) {
+                    new Notice((err as Error).message);
+                    throw err;
+                }
+            },
         }).open();
     }
 }

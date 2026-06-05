@@ -72,6 +72,14 @@ export interface RawContent {
     encoding: string;
 }
 
+/** An entry returned when listing a directory via the Contents API. */
+export interface RawContentItem {
+    name: string;
+    path: string;
+    /** "file" | "dir" | "symlink" | "submodule". */
+    type: string;
+}
+
 export interface RawSearchItem {
     number: number;
     title: string;
