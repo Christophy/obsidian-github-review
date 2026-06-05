@@ -1,5 +1,23 @@
 import { parse as parseYaml } from "yaml";
 
+export type IssueFieldKind = "markdown" | "input" | "textarea" | "dropdown" | "checkboxes";
+
+/** One field of a GitHub issue form, rendered as its own control in the composer. */
+export interface IssueFormField {
+    kind: IssueFieldKind;
+    /** Field label / heading (empty for `markdown` instruction blocks). */
+    label: string;
+    /** Helper text shown under the control. */
+    description: string;
+    /** Input/textarea placeholder. */
+    placeholder: string;
+    required: boolean;
+    /** Choices for `dropdown` / `checkboxes`. */
+    options: string[];
+    /** Static instructional Markdown for `markdown` fields. */
+    value: string;
+}
+
 /** A starting point for a new issue, derived from a repo's issue template. */
 export interface IssueTemplate {
     /** Display name for the picker (the template's `name`, falling back to the filename). */
@@ -8,22 +26,56 @@ export interface IssueTemplate {
     title: string;
     /** Labels the template applies. */
     labels: string[];
-    /** Pre-filled issue body (Markdown). */
+    /** Markdown templates: the body. Issue forms: an empty-answer fallback skeleton. */
     body: string;
+    /** Present for YAML issue forms — render each as its own input. */
+    fields?: IssueFormField[];
+}
+
+/** A user's answer to one field, positionally aligned with the template's `fields`. */
+export interface IssueFormAnswer {
+    /** input / textarea / dropdown value. */
+    text?: string;
+    /** checkboxes: checked state per option, aligned with the field's `options`. */
+    checked?: boolean[];
 }
 
 /**
- * Parse a GitHub issue template file into an {@link IssueTemplate}. Handles both
- * formats GitHub supports:
+ * Parse a GitHub issue template file into an {@link IssueTemplate}.
  *  - Markdown templates (`.md`): YAML frontmatter (`name`/`title`/`labels`) + a body.
- *  - Issue forms (`.yml`): the GitHub form schema, rendered to a Markdown skeleton
- *    (one `### label` section per field). This plugin edits Markdown, not interactive
- *    forms, so a form becomes a fill-in-the-blanks body.
+ *  - Issue forms (`.yml`): the GitHub form schema, parsed into `fields` so the
+ *    composer can render one control per field; the body is assembled from the
+ *    user's answers on submit (see {@link assembleIssueBody}).
  */
 export function parseIssueTemplate(filename: string, content: string): IssueTemplate {
     return /\.ya?ml$/i.test(filename)
         ? parseIssueForm(filename, content)
         : parseMarkdownTemplate(filename, content);
+}
+
+/**
+ * Assemble a GitHub-style issue body from a form's fields and the user's answers:
+ * one `### <label>` section per non-markdown field, with the answer (or
+ * `_No response_`) underneath. Checkboxes render as a task list.
+ */
+export function assembleIssueBody(fields: IssueFormField[], answers: IssueFormAnswer[]): string {
+    const sections: string[] = [];
+    fields.forEach((field, i) => {
+        if (field.kind === "markdown") {
+            return;
+        }
+        const answer = answers[i] ?? {};
+        let response: string;
+        if (field.kind === "checkboxes") {
+            response = field.options.length
+                ? field.options.map((o, j) => `- [${answer.checked?.[j] ? "x" : " "}] ${o}`).join("\n")
+                : "_No response_";
+        } else {
+            response = (answer.text ?? "").trim() || "_No response_";
+        }
+        sections.push(`### ${field.label}\n\n${response}`);
+    });
+    return sections.join("\n\n");
 }
 
 function parseMarkdownTemplate(filename: string, content: string): IssueTemplate {
@@ -36,62 +88,94 @@ function parseMarkdownTemplate(filename: string, content: string): IssueTemplate
     };
 }
 
-/**
- * GitHub turns a submitted issue form into a body of `### <label>` sections, one
- * per input. We mirror that as a fill-in skeleton: a heading per field, with a
- * blank line under it to type the answer. `markdown` fields are form-only
- * instructions (GitHub omits them from the body), and field `description`s are
- * helper text (also omitted) — including them is what made the body read as one
- * lumped blob. `checkboxes` keep their options as a task list.
- */
 function parseIssueForm(filename: string, content: string): IssueTemplate {
     const form = safeParseYaml(content);
-    const fields = Array.isArray(form.body) ? form.body : [];
-    const sections: string[] = [];
-
-    for (const field of fields) {
-        if (!field || typeof field !== "object") {
-            continue;
-        }
-        const f = field as { type?: unknown; attributes?: unknown };
-        if (f.type === "markdown") {
-            continue;
-        }
-        const attrs = (f.attributes && typeof f.attributes === "object" ? f.attributes : {}) as Record<
-            string,
-            unknown
-        >;
-        const label = asString(attrs.label).trim();
-        if (!label) {
-            continue;
-        }
-        if (f.type === "checkboxes") {
-            const items = checkboxOptions(attrs.options).map((o) => `- [ ] ${o}`);
-            sections.push(items.length ? `### ${label}\n\n${items.join("\n")}` : `### ${label}`);
-        } else {
-            // bare heading; the blank line from the join below is the answer slot
-            sections.push(`### ${label}`);
+    const rawFields = Array.isArray(form.body) ? form.body : [];
+    const fields: IssueFormField[] = [];
+    for (const raw of rawFields) {
+        const field = toFormField(raw);
+        if (field) {
+            fields.push(field);
         }
     }
-
     return {
         name: asString(form.name) || filename,
         title: asString(form.title),
         labels: asLabels(form.labels),
-        body: sections.join("\n\n"),
+        body: assembleIssueBody(fields, []),
+        fields,
     };
 }
 
-/** Option labels from a checkboxes field (`options: [{ label }]` or plain strings). */
-function checkboxOptions(options: unknown): string[] {
+function toFormField(raw: unknown): IssueFormField | null {
+    if (!raw || typeof raw !== "object") {
+        return null;
+    }
+    const r = raw as { type?: unknown; attributes?: unknown; validations?: unknown };
+    const kind = normalizeKind(r.type);
+    if (!kind) {
+        return null;
+    }
+    const attrs = (r.attributes && typeof r.attributes === "object" ? r.attributes : {}) as Record<
+        string,
+        unknown
+    >;
+    if (kind === "markdown") {
+        const value = asString(attrs.value).trim();
+        return value ? blankField("markdown", { value }) : null;
+    }
+    const label = asString(attrs.label).trim();
+    if (!label) {
+        return null;
+    }
+    return blankField(kind, {
+        label,
+        description: asString(attrs.description).trim(),
+        placeholder: asString(attrs.placeholder).trim(),
+        required: isRequired(r.validations),
+        options: kind === "dropdown" || kind === "checkboxes" ? optionLabels(attrs.options) : [],
+    });
+}
+
+function blankField(kind: IssueFieldKind, over: Partial<IssueFormField>): IssueFormField {
+    return {
+        kind,
+        label: "",
+        description: "",
+        placeholder: "",
+        required: false,
+        options: [],
+        value: "",
+        ...over,
+    };
+}
+
+function normalizeKind(type: unknown): IssueFieldKind | null {
+    return type === "markdown" ||
+        type === "input" ||
+        type === "textarea" ||
+        type === "dropdown" ||
+        type === "checkboxes"
+        ? type
+        : null;
+}
+
+function isRequired(validations: unknown): boolean {
+    return !!(
+        validations &&
+        typeof validations === "object" &&
+        (validations as Record<string, unknown>).required === true
+    );
+}
+
+/** Option labels for dropdown (plain strings) or checkboxes (`{ label }` objects). */
+function optionLabels(options: unknown): string[] {
     if (!Array.isArray(options)) {
         return [];
     }
     return options
         .map((o) =>
-            o && typeof o === "object"
-                ? asString((o as Record<string, unknown>).label)
-                : asString(o),
+            o && typeof o === "object" ? asString((o as Record<string, unknown>).label) : asString(o),
         )
         .map((s) => s.trim())
         .filter(Boolean);

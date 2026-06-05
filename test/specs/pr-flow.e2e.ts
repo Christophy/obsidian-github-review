@@ -147,6 +147,34 @@ describe("GitHub Review – review flows (stubbed network)", function () {
                             encoding: "base64",
                         };
                     }
+                    if (url.includes("/contents/.github/ISSUE_TEMPLATE/feature.yml")) {
+                        return {
+                            content: btoa(
+                                "name: Feature request\n" +
+                                    "title: '[Feature]: '\n" +
+                                    "labels: [enhancement]\n" +
+                                    "body:\n" +
+                                    "  - type: textarea\n" +
+                                    "    attributes:\n" +
+                                    "      label: Summary\n" +
+                                    "    validations:\n" +
+                                    "      required: true\n" +
+                                    "  - type: dropdown\n" +
+                                    "    attributes:\n" +
+                                    "      label: Severity\n" +
+                                    "      options:\n" +
+                                    "        - Low\n" +
+                                    "        - High\n" +
+                                    "  - type: checkboxes\n" +
+                                    "    attributes:\n" +
+                                    "      label: Areas\n" +
+                                    "      options:\n" +
+                                    "        - label: API\n" +
+                                    "        - label: UI\n",
+                            ),
+                            encoding: "base64",
+                        };
+                    }
                     if (url.split("?")[0].endsWith("/contents/.github/ISSUE_TEMPLATE")) {
                         return [
                             {
@@ -155,6 +183,11 @@ describe("GitHub Review – review flows (stubbed network)", function () {
                                 type: "file",
                             },
                             { name: "config.yml", path: ".github/ISSUE_TEMPLATE/config.yml", type: "file" },
+                            {
+                                name: "feature.yml",
+                                path: ".github/ISSUE_TEMPLATE/feature.yml",
+                                type: "file",
+                            },
                         ];
                     }
                     if (url.includes("/contents/docs/design.md")) {
@@ -631,5 +664,68 @@ describe("GitHub Review – review flows (stubbed network)", function () {
                 ),
             { timeout: 8000, timeoutMsg: "created issue #42 did not open" },
         );
+    });
+
+    it("renders a YAML issue form as individual fields and assembles the body on submit", async () => {
+        await browser.executeObsidian(() => {
+            (window as any).__ghrCalls.length = 0;
+        });
+        await browser.executeObsidianCommand("github-review:new-issue");
+        await $(".ghr-new-issue select").waitForExist({ timeout: 8000 });
+
+        // pick the form template (index 1) and fill each field control
+        const shape = await browser.executeObsidian(() => {
+            const select = document.querySelector(".ghr-new-issue select") as HTMLSelectElement;
+            select.value = "1";
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            const write = document.querySelector(".ghr-issue-write") as HTMLElement;
+            const textarea = write.querySelector(".ghr-form-textarea") as HTMLTextAreaElement;
+            const dropdown = write.querySelector(".ghr-form-select") as HTMLSelectElement;
+            const checks = Array.from(
+                write.querySelectorAll<HTMLInputElement>(".ghr-form-check input"),
+            );
+            textarea.value = "It is slow";
+            textarea.dispatchEvent(new Event("input", { bubbles: true }));
+            dropdown.value = "High";
+            dropdown.dispatchEvent(new Event("change", { bubbles: true }));
+            const firstArea = checks[0];
+            if (firstArea) {
+                firstArea.checked = true;
+                firstArea.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            return {
+                fieldCount: write.querySelectorAll(".ghr-form-field").length,
+                checkCount: checks.length,
+                singleTextarea: !write.querySelector(".ghr-issue-input"), // not the markdown path
+            };
+        });
+        expect(shape.fieldCount).toBe(3); // Summary, Severity, Areas
+        expect(shape.checkCount).toBe(2); // API, UI
+        expect(shape.singleTextarea).toBe(true);
+
+        await browser.executeObsidian(() => {
+            (document.querySelector(".ghr-issue-submit") as HTMLButtonElement).click();
+        });
+        await browser.waitUntil(
+            () =>
+                browser.executeObsidian(() =>
+                    ((window as any).__ghrCalls as any[]).some(
+                        (c) => c.method === "POST" && c.url.split("?")[0].endsWith("/issues"),
+                    ),
+                ),
+            { timeout: 8000, timeoutMsg: "form issue was never POSTed" },
+        );
+        const post = await browser.executeObsidian(() =>
+            ((window as any).__ghrCalls as any[]).find(
+                (c) => c.method === "POST" && c.url.split("?")[0].endsWith("/issues"),
+            ),
+        );
+        const body = JSON.parse(post.body);
+        expect(body.title).toBe("[Feature]:");
+        expect(body.labels).toEqual(["enhancement"]);
+        // each field became its own ### section, assembled from the answers
+        expect(body.body).toContain("### Summary\n\nIt is slow");
+        expect(body.body).toContain("### Severity\n\nHigh");
+        expect(body.body).toContain("### Areas\n\n- [x] API\n- [ ] UI");
     });
 });

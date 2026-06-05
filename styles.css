@@ -351,3 +351,39 @@
     margin-bottom: var(--size-4-3);
     overflow-wrap: anywhere;
 }
+/* interactive issue-form fields */
+.ghr-form-field {
+    margin-bottom: var(--size-4-4);
+}
+.ghr-form-label {
+    font-weight: var(--font-semibold);
+    margin-bottom: var(--size-4-1);
+}
+.ghr-form-required {
+    color: var(--text-error);
+}
+.ghr-form-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    margin-bottom: var(--size-4-1);
+}
+.ghr-form-input,
+.ghr-form-select,
+.ghr-form-textarea {
+    box-sizing: border-box;
+    width: 100%;
+}
+.ghr-form-textarea {
+    min-height: 90px;
+    resize: vertical;
+}
+.ghr-form-check {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+    cursor: pointer;
+}
+.ghr-form-md {
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-3);
+}
