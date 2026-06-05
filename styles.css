@@ -4,6 +4,9 @@
 .ghr-review-view {
     padding: var(--size-4-5) var(--size-4-6);
     line-height: var(--line-height-normal);
+    /* Obsidian disables text selection on UI chrome; re-enable it for our content. */
+    user-select: text;
+    -webkit-user-select: text;
 }
 /* Center content in a readable column using Obsidian's own width variable, so
    it follows the user's "Readable line length" setting (--file-line-width). */
