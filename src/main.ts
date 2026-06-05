@@ -11,7 +11,6 @@ import { parseGitHubRef } from "./core/github-ref";
 import { readGitHubRemote } from "./git-detect";
 import { UrlPromptModal } from "./ui/url-prompt";
 import { NewIssueModal } from "./ui/new-issue-modal";
-import type { IssueTemplate } from "./core/issue-template";
 import type { Ref } from "./core/model";
 
 /**
@@ -243,35 +242,37 @@ export default class GitHubReviewPlugin extends Plugin {
         }).open();
     }
 
-    /** Compose and create a new issue in the queue's repo, following its templates. */
+    /** Compose and create a new issue, following the target repo's templates. */
     async newIssue(): Promise<void> {
         const service = this.issueService;
         if (!service) {
             new Notice("Set your GitHub token in settings first.");
             return;
         }
-        const target = this.queueRepos()[0];
+        // Prefer the repo of the PR/issue you're viewing, then the queue's scope,
+        // then any open review tab — so "New issue" works wherever you trigger it.
+        const activeRef = this.app.workspace.getActiveViewOfType(ReviewView)?.currentRef() ?? null;
+        const target =
+            (activeRef && `${activeRef.owner}/${activeRef.repo}`) ||
+            this.queueRepos()[0] ||
+            this.anyOpenReviewRepo();
         const [owner, repo] = target?.split("/") ?? [];
         if (!owner || !repo) {
-            new Notice("No GitHub repo for this vault. Set a repository in settings.");
+            new Notice(
+                "No GitHub repo found. Open an issue or pull request, or set a repository in settings.",
+            );
             return;
         }
 
-        // Load templates and @mention handles up front so the modal opens ready.
-        let templates: IssueTemplate[] = [];
+        // Load @mention handles in the background; the modal opens immediately.
         let handles: string[] = [];
-        try {
-            [templates, handles] = await Promise.all([
-                service.listTemplates(owner, repo),
-                this.mentionHandlesFor({ owner, repo, number: 0, type: "issue" }),
-            ]);
-        } catch (err) {
-            new Notice(`Couldn't load issue templates: ${(err as Error).message}`);
-        }
+        void this.mentionHandlesFor({ owner, repo, number: 0, type: "issue" }).then((h) => {
+            handles = h;
+        });
 
         new NewIssueModal(this.app, {
             repoLabel: `${owner}/${repo}`,
-            templates,
+            loadTemplates: () => service.listTemplates(owner, repo),
             getMentionHandles: () => handles,
             onSubmit: async (title, body, labels) => {
                 try {
@@ -285,5 +286,16 @@ export default class GitHubReviewPlugin extends Plugin {
                 }
             },
         }).open();
+    }
+
+    /** The repo of any currently-open review tab, if any. */
+    private anyOpenReviewRepo(): string | undefined {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)) {
+            const ref = leaf.view instanceof ReviewView ? leaf.view.currentRef() : null;
+            if (ref) {
+                return `${ref.owner}/${ref.repo}`;
+            }
+        }
+        return undefined;
     }
 }

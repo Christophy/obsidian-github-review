@@ -324,10 +324,21 @@
 
 /* ---------- new issue modal ---------- */
 .ghr-new-issue {
-    min-width: min(680px, 80vw);
+    width: 100%;
+}
+.ghr-issue-loading {
+    color: var(--text-muted);
+    padding: var(--size-4-2) 0;
 }
 .ghr-issue-tabs {
     margin-top: var(--size-4-2);
+}
+/* border-box + width:100% so the editor fits the modal — vertical scroll only */
+.ghr-issue-input,
+.ghr-issue-preview {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
 }
 .ghr-issue-input {
     min-height: 200px;
@@ -338,5 +349,5 @@
     border-radius: var(--radius-s);
     padding: var(--size-4-3);
     margin-bottom: var(--size-4-3);
-    overflow-y: auto;
+    overflow-wrap: anywhere;
 }

@@ -36,6 +36,14 @@ function parseMarkdownTemplate(filename: string, content: string): IssueTemplate
     };
 }
 
+/**
+ * GitHub turns a submitted issue form into a body of `### <label>` sections, one
+ * per input. We mirror that as a fill-in skeleton: a heading per field, with a
+ * blank line under it to type the answer. `markdown` fields are form-only
+ * instructions (GitHub omits them from the body), and field `description`s are
+ * helper text (also omitted) — including them is what made the body read as one
+ * lumped blob. `checkboxes` keep their options as a task list.
+ */
 function parseIssueForm(filename: string, content: string): IssueTemplate {
     const form = safeParseYaml(content);
     const fields = Array.isArray(form.body) ? form.body : [];
@@ -46,24 +54,24 @@ function parseIssueForm(filename: string, content: string): IssueTemplate {
             continue;
         }
         const f = field as { type?: unknown; attributes?: unknown };
+        if (f.type === "markdown") {
+            continue;
+        }
         const attrs = (f.attributes && typeof f.attributes === "object" ? f.attributes : {}) as Record<
             string,
             unknown
         >;
-        // A "markdown" field is static instructional text, kept verbatim.
-        if (f.type === "markdown") {
-            const value = asString(attrs.value).trim();
-            if (value) {
-                sections.push(value);
-            }
-            continue;
-        }
         const label = asString(attrs.label).trim();
         if (!label) {
             continue;
         }
-        const desc = asString(attrs.description).trim();
-        sections.push(desc ? `### ${label}\n\n${desc}` : `### ${label}`);
+        if (f.type === "checkboxes") {
+            const items = checkboxOptions(attrs.options).map((o) => `- [ ] ${o}`);
+            sections.push(items.length ? `### ${label}\n\n${items.join("\n")}` : `### ${label}`);
+        } else {
+            // bare heading; the blank line from the join below is the answer slot
+            sections.push(`### ${label}`);
+        }
     }
 
     return {
@@ -72,6 +80,21 @@ function parseIssueForm(filename: string, content: string): IssueTemplate {
         labels: asLabels(form.labels),
         body: sections.join("\n\n"),
     };
+}
+
+/** Option labels from a checkboxes field (`options: [{ label }]` or plain strings). */
+function checkboxOptions(options: unknown): string[] {
+    if (!Array.isArray(options)) {
+        return [];
+    }
+    return options
+        .map((o) =>
+            o && typeof o === "object"
+                ? asString((o as Record<string, unknown>).label)
+                : asString(o),
+        )
+        .map((s) => s.trim())
+        .filter(Boolean);
 }
 
 /** Split a leading `---` YAML frontmatter block from the Markdown body. */

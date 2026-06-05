@@ -45,7 +45,7 @@ describe("parseIssueTemplate – Markdown templates", () => {
 });
 
 describe("parseIssueTemplate – YAML issue forms", () => {
-    it("renders form fields as a Markdown skeleton (one section per field)", () => {
+    it("renders one `### heading` per field, GitHub-style (excludes markdown + descriptions)", () => {
         const content = [
             "name: Feature request",
             "description: Suggest an idea",
@@ -69,16 +69,23 @@ describe("parseIssueTemplate – YAML issue forms", () => {
         expect(t.name).to.equal("Feature request");
         expect(t.title).to.equal("[Feature]: ");
         expect(t.labels).to.deep.equal(["enhancement"]);
-        expect(t.body).to.equal(
-            [
-                "Thanks for taking the time!",
-                "",
-                "### What problem does this solve?",
-                "",
-                "A clear description.",
-                "",
-                "### Version",
-            ].join("\n"),
+        // markdown instruction and helper description are dropped (form-only, like GitHub);
+        // each input becomes a heading with a blank line under it to answer in.
+        expect(t.body).to.equal("### What problem does this solve?\n\n### Version");
+    });
+
+    it("renders a checkboxes field as a task list under its heading", () => {
+        const content = [
+            "body:",
+            "  - type: checkboxes",
+            "    attributes:",
+            "      label: Affected platforms",
+            "      options:",
+            "        - label: Desktop",
+            "        - label: Mobile",
+        ].join("\n");
+        expect(parseIssueTemplate("forms.yml", content).body).to.equal(
+            "### Affected platforms\n\n- [ ] Desktop\n- [ ] Mobile",
         );
     });
 

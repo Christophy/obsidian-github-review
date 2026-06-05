@@ -75,6 +75,11 @@ export class ReviewView extends ItemView {
         return { ref: this.ref };
     }
 
+    /** The issue/PR this view is showing, if any (used to target a new issue at the same repo). */
+    currentRef(): Ref | null {
+        return this.ref;
+    }
+
     async onOpen(): Promise<void> {
         const seconds = this.deps.getPollSeconds();
         if (seconds > 0) {

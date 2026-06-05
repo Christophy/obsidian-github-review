@@ -572,8 +572,9 @@ describe("GitHub Review – review flows (stubbed network)", function () {
         });
         await browser.executeObsidianCommand("github-review:new-issue");
 
-        // the modal opens once templates have loaded
+        // modal opens immediately; the template dropdown appears once templates load
         await $(".ghr-new-issue .ghr-issue-title").waitForExist({ timeout: 8000 });
+        await $(".ghr-new-issue select").waitForExist({ timeout: 8000 });
 
         // choosing the template prefills the title and body
         const prefilled = await browser.executeObsidian(() => {
