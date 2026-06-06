@@ -37,7 +37,7 @@ import type { Ref } from "./core/model";
  * the real network so views can be driven with deterministic data in Obsidian.
  */
 const obsidianHttp: HttpFn = async (req) => {
-    const override = (globalThis as Record<string, unknown>).__GHR_TEST_HTTP__ as
+    const override = (window as unknown as Record<string, unknown>).__GHR_TEST_HTTP__ as
         | HttpFn
         | undefined;
     if (override) {
@@ -121,8 +121,7 @@ export default class GitHubReviewPlugin extends Plugin {
         });
         this.addCommand({
             id: "copy-mcp-config",
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- "MCP" acronym, "Claude" product name
-            name: "Copy MCP server config for Claude clients",
+            name: "Copy AI client config",
             callback: () => this.copyContextServerConfig(),
         });
 

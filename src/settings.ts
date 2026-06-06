@@ -43,8 +43,7 @@ export class GitHubReviewSettingTab extends PluginSettingTab {
             )
             .addText((text) => {
                 text.inputEl.type = "password";
-                // eslint-disable-next-line obsidianmd/ui/sentence-case -- example token value, not prose
-                text.setPlaceholder("github_pat_…")
+                text.setPlaceholder("Fine-grained personal access token")
                     .setValue(this.plugin.settings.token)
                     .onChange(async (value) => {
                         this.plugin.settings.token = value.trim();
@@ -71,8 +70,7 @@ export class GitHubReviewSettingTab extends PluginSettingTab {
             )
             .addTextArea((ta) => {
                 ta.inputEl.rows = 5;
-                // eslint-disable-next-line obsidianmd/ui/sentence-case -- example "owner/repo" value, not prose
-                ta.setPlaceholder("octocat/hello-world")
+                ta.setPlaceholder("One owner/repo per line")
                     .setValue(this.plugin.settings.repos.join("\n"))
                     .onChange(async (value) => {
                         this.plugin.settings.repos = value
@@ -107,13 +105,11 @@ export class GitHubReviewSettingTab extends PluginSettingTab {
                 });
             });
 
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "MCP" is an acronym
-        new Setting(containerEl).setName("Claude client integration (MCP)").setHeading();
+        new Setting(containerEl).setName("AI client integration").setHeading();
         new Setting(containerEl)
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PR" acronym, "Claude" product name
-            .setName("Expose the open issue/PR to Claude clients")
+            .setName("Expose the open issue or pull request to AI clients")
             .setDesc(
-                "Let an external Claude client (e.g. Claudian) read the pull request or issue you're viewing, via a local stdio MCP server. No port, no token, read-only. The config is written to <vault>/.claude/mcp.json automatically, so Claudian picks it up on reload — you don't add anything by hand.",
+                "Let an external AI client read the pull request or issue you're viewing. No port, no token, read-only. The config is written to your vault's .claude/mcp.json automatically, so a client like Claudian picks it up on reload — you don't add anything by hand.",
             )
             .addToggle((toggle) =>
                 toggle.setValue(this.plugin.settings.contextServerEnabled).onChange(async (value) => {
@@ -125,11 +121,9 @@ export class GitHubReviewSettingTab extends PluginSettingTab {
 
         if (this.plugin.settings.contextServerEnabled) {
             new Setting(containerEl)
-                // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Claude" product name
-                .setName("Other Claude clients")
+                .setName("Other AI clients")
                 .setDesc(
-                    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Claudian" product name, "MCP" acronym
-                    "Claudian needs no setup (see above). For another client, copy the stdio MCP config and add it there.",
+                    "The recommended client needs no setup (see above). For another client, copy the config and add it there.",
                 )
                 .addButton((btn) =>
                     btn.setButtonText("Copy config").onClick(() => this.plugin.copyContextServerConfig()),

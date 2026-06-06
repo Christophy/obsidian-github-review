@@ -1,8 +1,8 @@
 {
     "id": "github-review",
     "name": "GitHub Review",
-    "version": "0.1.1",
-    "minAppVersion": "1.5.0",
+    "version": "0.1.2",
+    "minAppVersion": "1.7.2",
     "description": "Read, comment on, and approve/request-changes on GitHub issues & pull requests. GitHub stays the source of truth.",
     "author": "Christophy",
     "authorUrl": "https://github.com/Christophy",
