@@ -26,11 +26,16 @@ jobs:
           cp main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review/
           (cd dist && zip -r github-review.zip github-review)
 
-      - name: Create GitHub release with artifacts
+      - name: Create or update the GitHub release with artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "${GITHUB_REF_NAME}" \
-            --notes "Manual install: copy main.js, manifest.json, styles.css and mcp-stdio.js into <vault>/.obsidian/plugins/github-review/ (or unzip github-review.zip there), then enable the plugin in Community plugins." \
-            main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review.zip
+          TAG="${GITHUB_REF_NAME}"
+          FILES="main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review.zip"
+          NOTES="Manual install: copy main.js, manifest.json, styles.css and mcp-stdio.js into <vault>/.obsidian/plugins/github-review/ (or unzip github-review.zip there), then enable the plugin in Community plugins."
+          # Idempotent: update the assets if a release for this tag already exists.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $FILES --clobber
+          else
+            gh release create "$TAG" --title "$TAG" --notes "$NOTES" $FILES
+          fi
