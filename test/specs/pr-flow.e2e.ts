@@ -728,4 +728,69 @@ describe("GitHub Review – review flows (stubbed network)", function () {
         expect(body.body).toContain("### Severity\n\nHigh");
         expect(body.body).toContain("### Areas\n\n- [x] API\n- [ ] UI");
     });
+
+    it("writes a keyed context store + stdio mcp.json, and the stdio server serves the open item", async function () {
+        this.timeout(30000);
+        // close other review tabs and open PR #7, then make it the active item
+        await browser.executeObsidian(async ({ app }) => {
+            const plugin = (app as any).plugins.plugins["github-review"];
+            (app.workspace as any).getLeavesOfType("ghr-review").forEach((l: any) => l.detach());
+            await plugin.openReview({ owner: "acme", repo: "widgets", number: 7, type: "pull" });
+            const leaf = (app.workspace as any)
+                .getLeavesOfType("ghr-review")
+                .find((l: any) => l.view?.currentRef?.()?.number === 7);
+            (app.workspace as any).setActiveLeaf(leaf, { focus: true });
+        });
+
+        // the plugin auto-writes the stdio config so the user adds nothing by hand
+        const mcpFile = await browser.executeObsidian(async ({ app }) => {
+            const a = (app.vault as any).adapter;
+            return (await a.exists(".claude/mcp.json")) ? await a.read(".claude/mcp.json") : null;
+        });
+        expect(typeof mcpFile).toBe("string");
+        const parsed = JSON.parse(mcpFile as string);
+        const entry = parsed.mcpServers["github-review"];
+        expect(typeof entry.command).toBe("string"); // Obsidian's own binary (Electron-as-node)
+        expect(entry.env.ELECTRON_RUN_AS_NODE).toBe("1");
+        expect(entry.alwaysLoad).toBe(true);
+        expect(parsed._claudian.servers["github-review"].contextSaving).toBe(false);
+        const storeAbs: string = entry.args[1];
+
+        // the store is keyed by ref (so projects don't conflate) with #7 current
+        const fs = await import("node:fs/promises");
+        const store = JSON.parse(await fs.readFile(storeAbs, "utf8"));
+        expect(store.current).toBe("acme/widgets/pull/7");
+        expect(typeof store.items["acme/widgets/pull/7"].item).toBe("string");
+
+        // the built stdio server serves the store over MCP (spawned via Node)
+        const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+        const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+        const path = await import("node:path");
+        const client = new Client({ name: "e2e", version: "1.0.0" });
+        await client.connect(
+            new StdioClientTransport({
+                // eslint-disable-next-line no-undef -- the wdio runner is Node; process is a Node global
+                command: process.execPath,
+                args: [path.resolve("dist/mcp-stdio.js"), storeAbs],
+            }),
+        );
+        try {
+            const names = (await client.listTools()).tools.map((t) => t.name);
+            expect(names).toContain("get_current_item");
+            expect(names).toContain("get_item");
+            const current = await client.callTool({ name: "get_current_item", arguments: {} });
+            expect((current.content as { text: string }[]).map((c) => c.text).join("")).toContain(
+                '"number": 7',
+            );
+            const pinned = await client.callTool({
+                name: "get_item",
+                arguments: { owner: "acme", repo: "widgets", number: 7, type: "pull" },
+            });
+            expect((pinned.content as { text: string }[]).map((c) => c.text).join("")).toContain(
+                '"number": 7',
+            );
+        } finally {
+            await client.close();
+        }
+    });
 });

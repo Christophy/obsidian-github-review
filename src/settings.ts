@@ -11,6 +11,8 @@ export interface GitHubReviewSettings {
     showClosed: boolean;
     /** Auto-refresh interval (seconds) for open views; 0 disables polling. */
     pollSeconds: number;
+    /** Expose the open PR/issue to a Claude client via a local stdio MCP server. */
+    contextServerEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: GitHubReviewSettings = {
@@ -19,6 +21,7 @@ export const DEFAULT_SETTINGS: GitHubReviewSettings = {
     repos: [],
     showClosed: false,
     pollSeconds: 30,
+    contextServerEnabled: true,
 };
 
 export class GitHubReviewSettingTab extends PluginSettingTab {
@@ -103,5 +106,34 @@ export class GitHubReviewSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 });
             });
+
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "MCP" is an acronym
+        new Setting(containerEl).setName("Claude client integration (MCP)").setHeading();
+        new Setting(containerEl)
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PR" acronym, "Claude" product name
+            .setName("Expose the open issue/PR to Claude clients")
+            .setDesc(
+                "Let an external Claude client (e.g. Claudian) read the pull request or issue you're viewing, via a local stdio MCP server. No port, no token, read-only. The config is written to <vault>/.claude/mcp.json automatically, so Claudian picks it up on reload — you don't add anything by hand.",
+            )
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.contextServerEnabled).onChange(async (value) => {
+                    this.plugin.settings.contextServerEnabled = value;
+                    await this.plugin.saveData(this.plugin.settings);
+                    await this.plugin.restartContextIntegration();
+                }),
+            );
+
+        if (this.plugin.settings.contextServerEnabled) {
+            new Setting(containerEl)
+                // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Claude" product name
+                .setName("Other Claude clients")
+                .setDesc(
+                    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Claudian" product name, "MCP" acronym
+                    "Claudian needs no setup (see above). For another client, copy the stdio MCP config and add it there.",
+                )
+                .addButton((btn) =>
+                    btn.setButtonText("Copy config").onClick(() => this.plugin.copyContextServerConfig()),
+                );
+        }
     }
 }

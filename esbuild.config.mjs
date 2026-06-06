@@ -11,12 +11,23 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = (process.argv[2] === "production");
 
-const context = await esbuild.context({
-    banner: {
-        js: banner,
-    },
-    entryPoints: ["src/main.ts"],
+const nodeBuiltins = [...builtinModules, ...builtinModules.map((m) => `node:${m}`)];
+
+const shared = {
+    banner: { js: banner },
     bundle: true,
+    format: "cjs",
+    target: "es2018",
+    logLevel: "info",
+    sourcemap: prod ? false : "inline",
+    treeShaking: true,
+    minify: prod,
+};
+
+// The plugin itself, loaded by Obsidian's renderer.
+const pluginCtx = await esbuild.context({
+    ...shared,
+    entryPoints: ["src/main.ts"],
     external: [
         "obsidian",
         "electron",
@@ -31,20 +42,27 @@ const context = await esbuild.context({
         "@lezer/common",
         "@lezer/highlight",
         "@lezer/lr",
-        ...builtinModules,
+        ...nodeBuiltins,
     ],
-    format: "cjs",
-    target: "es2018",
-    logLevel: "info",
-    sourcemap: prod ? false : "inline",
-    treeShaking: true,
     outfile: "main.js",
-    minify: prod,
+});
+
+// The stdio MCP server, spawned by a Claude client via Obsidian's bundled Node.
+// Emitted into dist/ (gitignored + lint-ignored); distribution copies it next to
+// main.js in the plugin folder, where the plugin points the client at it.
+const stdioCtx = await esbuild.context({
+    ...shared,
+    entryPoints: ["src/mcp-stdio.ts"],
+    platform: "node",
+    external: [...nodeBuiltins],
+    outfile: "dist/mcp-stdio.js",
 });
 
 if (prod) {
-    await context.rebuild();
+    await pluginCtx.rebuild();
+    await stdioCtx.rebuild();
     process.exit(0);
 } else {
-    await context.watch();
+    await pluginCtx.watch();
+    await stdioCtx.watch();
 }

@@ -23,7 +23,7 @@ jobs:
       - name: Package the plugin
         run: |
           mkdir -p dist/github-review
-          cp main.js manifest.json styles.css dist/github-review/
+          cp main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review/
           (cd dist && zip -r github-review.zip github-review)
 
       - name: Create GitHub release with artifacts
@@ -32,5 +32,5 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Manual install: copy main.js, manifest.json and styles.css into <vault>/.obsidian/plugins/github-review/ (or unzip github-review.zip there), then enable the plugin in Community plugins." \
-            main.js manifest.json styles.css dist/github-review.zip
+            --notes "Manual install: copy main.js, manifest.json, styles.css and mcp-stdio.js into <vault>/.obsidian/plugins/github-review/ (or unzip github-review.zip there), then enable the plugin in Community plugins." \
+            main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review.zip

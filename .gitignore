@@ -14,9 +14,10 @@ node_modules
 # Release packaging output
 dist
 
-# Don't include the compiled main.js file in the repo.
-# They should be uploaded to GitHub releases instead.
+# Don't include the compiled output in the repo.
+# It should be uploaded to GitHub releases instead.
 main.js
+mcp-stdio.js
 
 # Exclude sourcemaps
 *.map

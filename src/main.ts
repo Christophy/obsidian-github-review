@@ -11,6 +11,23 @@ import { parseGitHubRef } from "./core/github-ref";
 import { readGitHubRemote } from "./git-detect";
 import { UrlPromptModal } from "./ui/url-prompt";
 import { NewIssueModal } from "./ui/new-issue-modal";
+import process from "node:process";
+import { join } from "node:path";
+import {
+    CLAUDIAN_MCP_DIR,
+    CLAUDIAN_MCP_FILE,
+    contextServerConfigJson,
+    mergeContextServer,
+    stripContextServer,
+    type StdioServerSpec,
+} from "./ai/claudian-config";
+import {
+    buildContextSnapshot,
+    refKey,
+    type ContextSnapshot,
+    type ContextStore,
+} from "./ai/context-snapshot";
+import type { PluginContext } from "./ai/plugin-context";
 import type { Ref } from "./core/model";
 
 /**
@@ -48,6 +65,10 @@ export default class GitHubReviewPlugin extends Plugin {
     private vaultRepo: string | null = null;
     private mentionService: MentionService | null = null;
     private readonly mentionCache = new Map<string, string[]>();
+    /** In-memory snapshots of the open review items, written to the store file the
+     *  stdio MCP server reads. Keyed by ref. */
+    private readonly contextItems = new Map<string, ContextSnapshot>();
+    private lastStoreSig = "";
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -97,13 +118,196 @@ export default class GitHubReviewPlugin extends Plugin {
             name: "Create new issue",
             callback: () => void this.newIssue(),
         });
+        this.addCommand({
+            id: "copy-mcp-config",
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- "MCP" acronym, "Claude" product name
+            name: "Copy MCP server config for Claude clients",
+            callback: () => this.copyContextServerConfig(),
+        });
 
         this.addSettingTab(new GitHubReviewSettingTab(this.app, this));
+
+        void this.startContextIntegration();
+
+        // Keep the context store in sync with the open / active review tabs.
+        this.registerEvent(
+            this.app.workspace.on("active-leaf-change", () => void this.refreshContextStore()),
+        );
+        this.registerEvent(
+            this.app.workspace.on("layout-change", () => void this.refreshContextStore()),
+        );
+    }
+
+    /** Context for a ref's tool handlers, or null if GitHub isn't configured. */
+    private contextFor(ref: Ref): PluginContext | null {
+        return this.client && this.reviewService
+            ? { client: this.client, review: this.reviewService, ref }
+            : null;
+    }
+
+    private activeReviewRef(): Ref | null {
+        return (
+            this.app.workspace.getActiveViewOfType(ReviewView)?.currentRef() ??
+            this.firstOpenReviewRef()
+        );
+    }
+
+    private vaultBasePath(): string | null {
+        const adapter = this.app.vault.adapter;
+        return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+    }
+
+    /**
+     * The stdio MCP server entry: Obsidian's own Node (process.execPath with
+     * ELECTRON_RUN_AS_NODE) runs our shipped script, which reads the store file —
+     * no port, no separate Node install, no token.
+     */
+    private stdioSpec(): StdioServerSpec | null {
+        const base = this.vaultBasePath();
+        const dir = this.manifest.dir;
+        if (!base || !dir) {
+            return null;
+        }
+        return {
+            command: process.execPath,
+            args: [join(base, dir, "mcp-stdio.js"), join(base, dir, "context.json")],
+            env: { ELECTRON_RUN_AS_NODE: "1" },
+        };
+    }
+
+    /** Vault-relative path of the store file (inside the plugin's own folder). */
+    private storeFilePath(): string | null {
+        const dir = this.manifest.dir;
+        return dir ? `${dir}/context.json` : null;
+    }
+
+    /** Enable the Claudian integration: write the stdio config + the store. */
+    private async startContextIntegration(): Promise<void> {
+        if (!this.settings.contextServerEnabled) {
+            return;
+        }
+        await this.writeClaudianConfig();
+        await this.refreshContextStore(true);
+    }
+
+    /** Re-apply after the enable toggle changes. */
+    async restartContextIntegration(): Promise<void> {
+        if (this.settings.contextServerEnabled) {
+            await this.startContextIntegration();
+        } else {
+            await this.removeClaudianConfig();
+        }
+    }
+
+    /**
+     * Write the open review items to the store file the stdio server reads. Re-fetches
+     * only the active item (ETag-cheap) and skips entirely when nothing changed.
+     */
+    private async refreshContextStore(force = false): Promise<void> {
+        if (!this.settings.contextServerEnabled) {
+            return;
+        }
+        const storePath = this.storeFilePath();
+        if (!storePath) {
+            return;
+        }
+        const openKeys = new Set<string>();
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)) {
+            const ref = leaf.view instanceof ReviewView ? leaf.view.currentRef() : null;
+            if (ref) {
+                openKeys.add(refKey(ref));
+            }
+        }
+        const activeRef = this.activeReviewRef();
+        const activeKey = activeRef ? refKey(activeRef) : null;
+        const sig = `${activeKey ?? ""}|${[...openKeys].sort().join(",")}`;
+        if (!force && sig === this.lastStoreSig) {
+            return;
+        }
+        this.lastStoreSig = sig;
+        for (const key of [...this.contextItems.keys()]) {
+            if (!openKeys.has(key)) {
+                this.contextItems.delete(key); // tab closed
+            }
+        }
+        if (activeRef && activeKey) {
+            const ctx = this.contextFor(activeRef);
+            if (ctx) {
+                try {
+                    this.contextItems.set(activeKey, await buildContextSnapshot(ctx));
+                } catch {
+                    // keep any previous snapshot for this item
+                }
+            }
+        }
+        const store: ContextStore = { current: activeKey, items: Object.fromEntries(this.contextItems) };
+        try {
+            await this.app.vault.adapter.write(storePath, JSON.stringify(store, null, 2));
+        } catch {
+            // best-effort
+        }
+    }
+
+    /** Merge our stdio server into <vault>/.claude/mcp.json, preserving anything else. */
+    private async writeClaudianConfig(): Promise<void> {
+        const spec = this.stdioSpec();
+        if (!spec) {
+            return;
+        }
+        const adapter = this.app.vault.adapter;
+        try {
+            const existing = (await adapter.exists(CLAUDIAN_MCP_FILE))
+                ? parseJsonSafe(await adapter.read(CLAUDIAN_MCP_FILE))
+                : null;
+            const merged = mergeContextServer(existing, spec);
+            if (!(await adapter.exists(CLAUDIAN_MCP_DIR))) {
+                await adapter.mkdir(CLAUDIAN_MCP_DIR);
+            }
+            await adapter.write(CLAUDIAN_MCP_FILE, JSON.stringify(merged, null, 2));
+        } catch {
+            // best-effort; the "Copy config" command is the manual fallback
+        }
+    }
+
+    /** Remove our entry from <vault>/.claude/mcp.json (when the server is turned off). */
+    private async removeClaudianConfig(): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        try {
+            if (!(await adapter.exists(CLAUDIAN_MCP_FILE))) {
+                return;
+            }
+            const stripped = stripContextServer(parseJsonSafe(await adapter.read(CLAUDIAN_MCP_FILE)));
+            await adapter.write(CLAUDIAN_MCP_FILE, JSON.stringify(stripped, null, 2));
+        } catch {
+            // best-effort
+        }
+    }
+
+    /** The MCP config a Claude client needs to reach this server, or null if off. */
+    contextServerConfig(): string | null {
+        if (!this.settings.contextServerEnabled) {
+            return null;
+        }
+        const spec = this.stdioSpec();
+        return spec ? contextServerConfigJson(spec) : null;
+    }
+
+    copyContextServerConfig(): void {
+        const config = this.contextServerConfig();
+        if (!config) {
+            new Notice("Context server is off. Enable it in the plugin settings.");
+            return;
+        }
+        void navigator.clipboard.writeText(config);
+        new Notice("MCP config copied. Add it in your Claude client (or <vault>/.claude/mcp.json).");
     }
 
     async loadSettings(): Promise<void> {
-        const data = (await this.loadData()) as Partial<GitHubReviewSettings> | null;
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {});
+        const data = (await this.loadData()) as
+            | (Partial<GitHubReviewSettings> & { settings?: Partial<GitHubReviewSettings> })
+            | null;
+        // Back-compat: a short-lived version wrapped settings in a { settings } envelope.
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings ?? data ?? {});
     }
 
     async saveSettings(): Promise<void> {
@@ -224,11 +428,13 @@ export default class GitHubReviewPlugin extends Plugin {
         });
         if (existing) {
             await workspace.revealLeaf(existing);
+            await this.refreshContextStore(true);
             return;
         }
         const leaf = workspace.getLeaf("tab");
         await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true, state: { ref } });
         await workspace.revealLeaf(leaf);
+        await this.refreshContextStore(true);
     }
 
     private openByUrl(): void {
@@ -298,4 +504,15 @@ export default class GitHubReviewPlugin extends Plugin {
         }
         return undefined;
     }
+
+    private firstOpenReviewRef(): Ref | null {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)) {
+            const ref = leaf.view instanceof ReviewView ? leaf.view.currentRef() : null;
+            if (ref) {
+                return ref;
+            }
+        }
+        return null;
+    }
+
 }

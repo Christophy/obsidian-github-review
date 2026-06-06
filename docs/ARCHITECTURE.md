@@ -11,6 +11,12 @@
   without mocking `obsidian`.
 - **Reuse Obsidian** where it already does the job: Markdown rendering, ` ```diff ` syntax
   highlighting (PrismJS), and the readable-line-width variable for layout.
+- **AI chat lives in an external Claude client**, not in the plugin. The plugin writes the open
+  review items to a small store file and ships a tiny **stdio MCP server** (`mcp-stdio.ts`, built to
+  `dist/mcp-stdio.js`) that a client (Claudian, the Claude Code CLI) spawns on demand via Obsidian's
+  own Node — no port, no running service, no token. It auto-registers the server in
+  `<vault>/.claude/mcp.json`. The tools read the store file, so the GitHub token never leaves the
+  plugin.
 
 ## Layout
 
@@ -37,6 +43,18 @@ src/
 │   ├── mention-service.ts   # discover repo bot @handles from issue/PR authors
 │   ├── issue-service.ts     # list a repo's issue templates; create a new issue
 │   └── issue-template.ts    # parse Markdown templates / YAML issue forms → a starting point
+│
+├── ai/                      # expose plugin context to external Claude clients via MCP
+│   ├── plugin-context.ts    # what tool handlers get (client + review service + the ref)
+│   ├── tool.ts              # PluginTool interface (name/description/zod schema/handler)
+│   ├── tools/               # tool handlers used to build the snapshot
+│   │   ├── get-item.ts      # a PR/issue's details
+│   │   └── get-changed-file.ts  # a changed file's content/diff
+│   ├── context-snapshot.ts  # build per-item snapshots + the keyed store + tool-text helpers
+│   └── claudian-config.ts   # merge/strip our entry in <vault>/.claude/mcp.json (pure)
+│
+├── mcp-stdio.ts             # standalone stdio MCP server (built to dist/mcp-stdio.js); reads the
+│                            #   store file and serves get_current_item / get_item / get_changed_file
 │
 ├── views/                   # layer 3: Obsidian ItemViews; each holds its own state
 │   ├── queue-view.ts        # sidebar: PR/Issue tabs, polling, click to open
@@ -75,8 +93,11 @@ No upward dependencies; views and services don't reference each other sideways.
 
 ## Unit-tested concerns
 
-`github-ref`, `git-remote`, `mappers`, `mentions`, `format`, `issue-template`, the services, and the
-client's URL / error / ETag / empty-body handling — all pure or fake-injected (mocha + chai). Views
-and the new-issue flow are covered by the WebdriverIO end-to-end suite against a real sandboxed
-Obsidian. Issue templates are parsed with the `yaml` package (the `js-yaml` alternative is banned by
-the lint config).
+`github-ref`, `git-remote`, `mappers`, `mentions`, `format`, `issue-template`, `context-snapshot`
+(the keyed store + tool-text: current item / pin-by-ref / graceful degrade) and `claudian-config`
+(the `.claude/mcp.json` merge/strip safety), the services, and the client's URL / error / ETag /
+empty-body handling — all pure or fake-injected (mocha + chai). Views, the new-issue flow, and that
+the plugin writes the keyed store + stdio config and the built `mcp-stdio.js` serves the open item to
+an MCP client (spawned for real) are covered by the WebdriverIO end-to-end suite against a real
+sandboxed Obsidian. Issue templates are parsed with the `yaml` package (the `js-yaml` alternative is
+banned by the lint config).

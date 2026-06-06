@@ -39,7 +39,9 @@
         "@wdio/spec-reporter": "^9.27.1",
         "chai": "^5.3.3",
         "esbuild": "^0.25.12",
+        "eslint": "^9.39.4",
         "eslint-plugin-obsidianmd": "^0.1.9",
+        "globals": "^14.0.0",
         "jiti": "^2.7.0",
         "mocha": "^10.8.2",
         "npm-run-all2": "^7.0.2",
@@ -53,6 +55,8 @@
         "wdio-obsidian-service": "^3.0.3"
     },
     "dependencies": {
-        "yaml": "^2.9.0"
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "yaml": "^2.9.0",
+        "zod": "^4.4.3"
     }
 }
