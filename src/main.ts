@@ -27,6 +27,7 @@ import {
     type ContextSnapshot,
     type ContextStore,
 } from "./ai/context-snapshot";
+import { MCP_STDIO_SOURCE } from "./mcp-stdio-source";
 import type { PluginContext } from "./ai/plugin-context";
 import type { Ref } from "./core/model";
 
@@ -181,13 +182,31 @@ export default class GitHubReviewPlugin extends Plugin {
         return dir ? `${dir}/context.json` : null;
     }
 
-    /** Enable the Claudian integration: write the stdio config + the store. */
+    /** Enable the Claudian integration: write the server + the stdio config + the store. */
     private async startContextIntegration(): Promise<void> {
         if (!this.settings.contextServerEnabled) {
             return;
         }
+        await this.writeStdioServer();
         await this.writeClaudianConfig();
         await this.refreshContextStore(true);
+    }
+
+    /**
+     * Materialize the bundled stdio MCP server to <plugin>/mcp-stdio.js. It's
+     * embedded in main.js (not shipped as a separate file), because Obsidian's
+     * community installer only delivers main.js / manifest.json / styles.css.
+     */
+    private async writeStdioServer(): Promise<void> {
+        const dir = this.manifest.dir;
+        if (!dir) {
+            return;
+        }
+        try {
+            await this.app.vault.adapter.write(`${dir}/mcp-stdio.js`, MCP_STDIO_SOURCE);
+        } catch {
+            // best-effort
+        }
     }
 
     /** Re-apply after the enable toggle changes. */
@@ -196,6 +215,25 @@ export default class GitHubReviewPlugin extends Plugin {
             await this.startContextIntegration();
         } else {
             await this.removeClaudianConfig();
+            await this.removeStdioServerFiles();
+        }
+    }
+
+    /** Clean up the files we wrote, when the integration is turned off. */
+    private async removeStdioServerFiles(): Promise<void> {
+        const dir = this.manifest.dir;
+        if (!dir) {
+            return;
+        }
+        const adapter = this.app.vault.adapter;
+        for (const path of [`${dir}/mcp-stdio.js`, `${dir}/context.json`]) {
+            try {
+                if (await adapter.exists(path)) {
+                    await adapter.remove(path);
+                }
+            } catch {
+                // best-effort
+            }
         }
     }
 

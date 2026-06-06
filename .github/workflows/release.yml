@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -20,19 +22,24 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Package the plugin
-        run: |
-          mkdir -p dist/github-review
-          cp main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review/
-          (cd dist && zip -r github-review.zip github-review)
+      # Provenance so users can verify the assets were built from this repo.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Create or update the GitHub release with artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          FILES="main.js manifest.json styles.css dist/mcp-stdio.js dist/github-review.zip"
-          NOTES="Manual install: copy main.js, manifest.json, styles.css and mcp-stdio.js into <vault>/.obsidian/plugins/github-review/ (or unzip github-review.zip there), then enable the plugin in Community plugins."
+          # Obsidian installs only these three; mcp-stdio.js is embedded in main.js
+          # and written by the plugin at runtime.
+          FILES="main.js manifest.json styles.css"
+          NOTES="GitHub Review ${TAG} — review GitHub issues & pull requests in Obsidian. Manual install: copy main.js, manifest.json and styles.css into <vault>/.obsidian/plugins/github-review/, then enable the plugin in Community plugins."
           # Idempotent: update the assets if a release for this tag already exists.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $FILES --clobber

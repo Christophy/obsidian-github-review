@@ -5,7 +5,6 @@ export const getItemTool: PluginTool = {
     name: "get_item",
     description:
         "Get a pull request or issue: title, state, author, labels, body, comments, and — for pull requests — the list of changed files with their stats. Use get_changed_file for a file's content or diff.",
-    schema: {},
     handler: async (_args, ctx) => {
         if (ctx.ref.type === "pull") {
             const pr = await ctx.review.fetchPullRequest(ctx.ref);

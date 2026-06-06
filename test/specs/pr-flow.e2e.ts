@@ -754,6 +754,7 @@ describe("GitHub Review – review flows (stubbed network)", function () {
         expect(entry.env.ELECTRON_RUN_AS_NODE).toBe("1");
         expect(entry.alwaysLoad).toBe(true);
         expect(parsed._claudian.servers["github-review"].contextSaving).toBe(false);
+        const serverAbs: string = entry.args[0]; // the plugin wrote mcp-stdio.js here
         const storeAbs: string = entry.args[1];
 
         // the store is keyed by ref (so projects don't conflate) with #7 current
@@ -762,16 +763,15 @@ describe("GitHub Review – review flows (stubbed network)", function () {
         expect(store.current).toBe("acme/widgets/pull/7");
         expect(typeof store.items["acme/widgets/pull/7"].item).toBe("string");
 
-        // the built stdio server serves the store over MCP (spawned via Node)
+        // the runtime-written stdio server serves the store over MCP (spawned via Node)
         const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
         const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-        const path = await import("node:path");
         const client = new Client({ name: "e2e", version: "1.0.0" });
         await client.connect(
             new StdioClientTransport({
                 // eslint-disable-next-line no-undef -- the wdio runner is Node; process is a Node global
                 command: process.execPath,
-                args: [path.resolve("dist/mcp-stdio.js"), storeAbs],
+                args: [serverAbs, storeAbs],
             }),
         );
         try {

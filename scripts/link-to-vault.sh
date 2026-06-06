@@ -16,8 +16,8 @@ mkdir -p "$PLUGIN_DIR"
 for f in main.js manifest.json styles.css; do
     ln -sf "$ROOT/$f" "$PLUGIN_DIR/$f"
 done
-# the stdio MCP server (for the Claude-client integration) is built into dist/
-ln -sf "$ROOT/dist/mcp-stdio.js" "$PLUGIN_DIR/mcp-stdio.js"
+# Note: mcp-stdio.js is written into the plugin folder by the plugin itself at
+# runtime (it's embedded in main.js), so it doesn't need to be linked here.
 
 echo "Linked into: $PLUGIN_DIR"
 echo "Next: enable 'GitHub Review' under Settings -> Community plugins, then reload Obsidian (Cmd+R)."

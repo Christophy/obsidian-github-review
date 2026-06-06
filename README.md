@@ -51,8 +51,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module layout.
 
 ### From a release (manual)
 
-1. Download `main.js`, `manifest.json`, `styles.css`, and `mcp-stdio.js` from the
-   [latest release](../../releases/latest) (or unzip `github-review.zip`).
+1. Download `main.js`, `manifest.json`, and `styles.css` from the
+   [latest release](../../releases/latest).
 2. Put them in `<your-vault>/.obsidian/plugins/github-review/`.
 3. In Obsidian: **Settings → Community plugins**, enable community plugins, then enable
    **GitHub Review**.
@@ -83,11 +83,12 @@ Open **Settings → GitHub Review**:
 
 ### Connect a Claude client (Claudian)
 
-The plugin writes the issue/PR you're viewing to a small store file and ships a tiny **stdio** MCP
-server (`mcp-stdio.js`) that a Claude client spawns on demand — no port, no running service, no
-separate Node (it uses Obsidian's own). **For [Claudian](https://github.com/YishenTu/claudian) you
-don't configure anything** — the plugin registers the server in your vault's `.claude/mcp.json`
-(which Claudian reads), so it shows up automatically.
+When the integration is enabled, the plugin writes the issue/PR you're viewing to a small store file
+and writes a tiny **stdio** MCP server (`mcp-stdio.js`, embedded in `main.js`) into its own plugin
+folder. A Claude client spawns that server on demand — no port, no running service, no separate Node
+(it uses Obsidian's own). **For [Claudian](https://github.com/YishenTu/claudian) you don't configure
+anything** — the plugin registers the server in your vault's `.claude/mcp.json` (which Claudian
+reads), so it shows up automatically.
 
 1. Keep **Settings → GitHub Review → Claude client integration (MCP)** enabled (it is by default).
 2. Open a pull request or issue in the review tab.
