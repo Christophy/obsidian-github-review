@@ -1,6 +1,6 @@
 {
     "name": "obsidian-github-review",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": "Read, comment on, and approve/request-changes on GitHub issues & pull requests. GitHub stays the source of truth.",
     "main": "main.js",
     "scripts": {
