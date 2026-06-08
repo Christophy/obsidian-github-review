@@ -113,7 +113,10 @@ describe("GitHub Review – review flows (stubbed network)", function () {
                         ];
                     }
                     // issue #8 detail (a real issue, not a PR)
-                    if (url.includes("/issues/8/comments")) return [];
+                    if (url.includes("/issues/8/comments")) {
+                        // any comments the test injects to simulate new server data
+                        return [...((window as any).__ghrExtra8 ?? [])];
+                    }
                     if (url.split("?")[0].endsWith("/issues/8")) {
                         return {
                             number: 8,
@@ -797,5 +800,64 @@ describe("GitHub Review – review flows (stubbed network)", function () {
         } finally {
             await client.close();
         }
+    });
+
+    it("re-writes the context store when the OPEN issue gets a new comment (not only on tab switch)", async function () {
+        this.timeout(30000);
+
+        // open issue #8 (a real issue) with no extra comments, make it the active item
+        await browser.executeObsidian(async ({ app }) => {
+            const plugin = (app as any).plugins.plugins["github-review"];
+            (app.workspace as any).getLeavesOfType("ghr-review").forEach((l: any) => l.detach());
+            (window as any).__ghrExtra8 = [];
+            await plugin.openReview({ owner: "acme", repo: "widgets", number: 8, type: "issue" });
+            const leaf = (app.workspace as any)
+                .getLeavesOfType("ghr-review")
+                .find((l: any) => l.view?.currentRef?.()?.number === 8);
+            (app.workspace as any).setActiveLeaf(leaf, { focus: true });
+        });
+
+        // read the store the MCP server reads (<plugin>/context.json), via the vault adapter
+        const readStore = async (): Promise<string | null> =>
+            browser.executeObsidian(async ({ app }) => {
+                const plugin = (app as any).plugins.plugins["github-review"];
+                const p = `${plugin.manifest.dir}/context.json`;
+                const a = (app.vault as any).adapter;
+                return (await a.exists(p)) ? ((await a.read(p)) as string) : null;
+            });
+
+        // issue #8 is current and its snapshot has no "Fresh comment" yet
+        await browser.waitUntil(
+            async () => {
+                const s = await readStore();
+                return !!s && JSON.parse(s).current === "acme/widgets/issue/8";
+            },
+            { timeout: 10000, timeoutMsg: "context store never recorded issue #8 as current" },
+        );
+        expect(await readStore()).not.toContain("Fresh comment via poll");
+
+        // a new comment lands server-side and the view's (silent) poll picks it up —
+        // the SAME item, content changed, no tab switch.
+        await browser.executeObsidian(async ({ app }) => {
+            (window as any).__ghrExtra8 = [
+                {
+                    id: 21,
+                    user: { login: "dave", avatar_url: "" },
+                    body: "Fresh comment via poll",
+                    created_at: "2026-06-05T00:00:00Z",
+                    html_url: "u",
+                },
+            ];
+            const leaf = (app.workspace as any)
+                .getLeavesOfType("ghr-review")
+                .find((l: any) => l.view?.currentRef?.()?.number === 8);
+            await leaf.view.refresh({ silent: true });
+        });
+
+        // the store the MCP serves MUST now contain the new comment, without a tab switch
+        await browser.waitUntil(async () => (await readStore())?.includes("Fresh comment via poll"), {
+            timeout: 10000,
+            timeoutMsg: "context.json did not pick up the new comment after the view refreshed",
+        });
     });
 });

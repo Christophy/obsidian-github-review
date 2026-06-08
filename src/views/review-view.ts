@@ -21,6 +21,9 @@ export interface ReviewViewDeps {
     getViewerLogin: () => string | null;
     getPollSeconds: () => number;
     fetchMentionHandles: (ref: Ref) => Promise<string[]>;
+    /** Called whenever a refresh pulls in changed data (poll, manual, post-action),
+     *  so the plugin can re-sync the context store an AI client reads. */
+    onDataChanged?: (ref: Ref) => void;
 }
 
 /**
@@ -131,7 +134,13 @@ export class ReviewView extends ItemView {
         if (opts.silent && sig === this.lastSig) {
             return; // polled, nothing changed — leave the DOM (and any typing) untouched
         }
+        const dataChanged = sig !== this.lastSig;
         this.lastSig = sig;
+        // The data this view shows just changed; let the plugin re-sync the context
+        // store an AI client reads, so it never serves a stale snapshot of this item.
+        if (dataChanged) {
+            this.deps.onDataChanged?.(ref);
+        }
 
         // Preserve an in-progress comment draft and scroll position across the rebuild.
         const draft = this.captureDraft();

@@ -96,6 +96,9 @@ export default class GitHubReviewPlugin extends Plugin {
                     getViewerLogin: () => this.viewerLogin,
                     getPollSeconds: () => this.settings.pollSeconds,
                     fetchMentionHandles: (ref) => this.mentionHandlesFor(ref),
+                    // a comment/edit landed (poll, manual refresh, or our own write):
+                    // re-sync the store so the AI client never sees a stale snapshot.
+                    onDataChanged: () => void this.refreshContextStore(true),
                 }),
         );
 
