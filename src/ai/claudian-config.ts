@@ -16,7 +16,6 @@ export interface ClaudianMcpFile {
 export interface StdioServerSpec {
     command: string;
     args: string[];
-    env?: Record<string, string>;
 }
 
 export const CLAUDIAN_MCP_DIR = ".claude";
@@ -32,7 +31,6 @@ function serverEntry(spec: StdioServerSpec): Record<string, unknown> {
     return {
         command: spec.command,
         args: spec.args,
-        ...(spec.env ? { env: spec.env } : {}),
         // keep the tools in the prompt instead of deferred behind tool search
         alwaysLoad: true,
     };

@@ -9,19 +9,20 @@ import {
 } from "../../src/ai/claudian-config";
 
 const spec: StdioServerSpec = {
-    command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian",
+    command: "node",
     args: ["/vault/plugins/github-review/mcp-stdio.js", "/vault/plugins/github-review/context.json"],
-    env: { ELECTRON_RUN_AS_NODE: "1" },
 };
 
 describe("claudian-config", () => {
     describe("mergeContextServer", () => {
-        it("writes our server as a stdio entry (command/args/env + alwaysLoad), visible (contextSaving:false)", () => {
+        it("writes our server as a stdio entry (command/args + alwaysLoad), visible (contextSaving:false)", () => {
             const out = mergeContextServer({}, spec);
             const entry = out.mcpServers![CONTEXT_SERVER_KEY] as Record<string, unknown>;
-            expect(entry.command).to.equal(spec.command);
+            // We spawn bare `node` (not Obsidian's binary, whose launcher stub can't run as Node);
+            // the client resolves it from PATH, so no env / ELECTRON_RUN_AS_NODE is needed.
+            expect(entry.command).to.equal("node");
             expect(entry.args).to.deep.equal(spec.args);
-            expect((entry.env as Record<string, string>).ELECTRON_RUN_AS_NODE).to.equal("1");
+            expect(entry.env).to.equal(undefined);
             expect(entry.alwaysLoad).to.equal(true);
             const meta = out._claudian!.servers![CONTEXT_SERVER_KEY] as Record<string, unknown>;
             expect(meta).to.deep.equal({ enabled: true, contextSaving: false });

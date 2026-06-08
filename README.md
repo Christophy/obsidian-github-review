@@ -27,8 +27,8 @@ Organised around the spec-review flow:
   to a small store file and registers the server in your vault's `.claude/mcp.json` automatically, so
   a client like Claudian picks it up with no manual setup; then just ask "what's this PR about?".
   Your repo's files come for free, since those clients run with the vault as their working directory.
-  **No port, no token, no separate Node** — the client spawns the server on demand using Obsidian's
-  own Node, and your GitHub token never leaves the plugin. See
+  **No port, no token, no running service** — the client spawns the server on demand with `node`, and
+  your GitHub token never leaves the plugin. See
   [Connect a Claude client](#connect-a-claude-client-claudian).
 - **@mention bots** — autocomplete for the repo's bots, to pull one into the review.
 - **Find what to review** — a queue scoped to the vault's GitHub repo, split into
@@ -85,10 +85,10 @@ Open **Settings → GitHub Review**:
 
 When the integration is enabled, the plugin writes the issue/PR you're viewing to a small store file
 and writes a tiny **stdio** MCP server (`mcp-stdio.js`, embedded in `main.js`) into its own plugin
-folder. A Claude client spawns that server on demand — no port, no running service, no separate Node
-(it uses Obsidian's own). **For [Claudian](https://github.com/YishenTu/claudian) you don't configure
-anything** — the plugin registers the server in your vault's `.claude/mcp.json` (which Claudian
-reads), so it shows up automatically.
+folder. A Claude client spawns that server on demand with `node` — no port, no running service, no
+token (any client that runs Claude Code already has Node). **For
+[Claudian](https://github.com/YishenTu/claudian) you don't configure anything** — the plugin registers
+the server in your vault's `.claude/mcp.json` (which Claudian reads), so it shows up automatically.
 
 1. Keep **Settings → GitHub Review → Claude client integration (MCP)** enabled (it is by default).
 2. Open a pull request or issue in the review tab.

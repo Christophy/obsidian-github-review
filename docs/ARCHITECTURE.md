@@ -15,9 +15,10 @@
   review items to a small store file and writes a tiny, dependency-free **stdio MCP server** — whose
   source is embedded in `main.js` (`mcp-stdio-source.ts`) and materialized to `<plugin>/mcp-stdio.js`
   at runtime, since Obsidian's community installer only delivers main.js/manifest/styles. A client
-  (Claudian, the Claude Code CLI) spawns it on demand via Obsidian's own Node — no port, no running
-  service, no token. It auto-registers the server in `<vault>/.claude/mcp.json`. The server only
-  reads the store file, so the GitHub token never leaves the plugin.
+  (Claudian, the Claude Code CLI) spawns it on demand with `node` (resolved from PATH) — no port, no
+  running service, no token. It auto-registers the server in `<vault>/.claude/mcp.json`. The server only
+  reads the store file, so the GitHub token never leaves the plugin. (Node is required to run the
+  server; any client that runs Claude Code already has it.)
 
 ## Layout
 

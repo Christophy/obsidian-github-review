@@ -3,10 +3,10 @@
  * `<plugin>/mcp-stdio.js` at runtime (so it ships inside main.js — Obsidian's
  * community installer only delivers main.js / manifest.json / styles.css).
  *
- * A Claude client (Claudian, the `claude` CLI) spawns it via Obsidian's own Node
- * (process.execPath + ELECTRON_RUN_AS_NODE). It is dependency-free: a minimal
- * newline-delimited JSON-RPC 2.0 server that reads the store file the plugin
- * writes (argv[2]) and serves the review context. No SDK, no token, no network.
+ * A Claude client (Claudian, the `claude` CLI) spawns it with `node` (resolved
+ * from PATH). It is dependency-free: a minimal newline-delimited JSON-RPC 2.0
+ * server that reads the store file the plugin writes (argv[2]) and serves the
+ * review context. No SDK, no token, no network.
  *
  * NOTE: this is plain ES2018 JS held as a String.raw literal (so `\n` etc. survive
  * verbatim). Keep it free of backticks and ${...}.

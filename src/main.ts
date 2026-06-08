@@ -11,7 +11,6 @@ import { parseGitHubRef } from "./core/github-ref";
 import { readGitHubRemote } from "./git-detect";
 import { UrlPromptModal } from "./ui/url-prompt";
 import { NewIssueModal } from "./ui/new-issue-modal";
-import process from "node:process";
 import { join } from "node:path";
 import {
     CLAUDIAN_MCP_DIR,
@@ -158,9 +157,11 @@ export default class GitHubReviewPlugin extends Plugin {
     }
 
     /**
-     * The stdio MCP server entry: Obsidian's own Node (process.execPath with
-     * ELECTRON_RUN_AS_NODE) runs our shipped script, which reads the store file —
-     * no port, no separate Node install, no token.
+     * The stdio MCP server entry: the client spawns `node` on our shipped script,
+     * which reads the store file — no port, no service, no token. We spawn `node`
+     * (not Obsidian's own binary, whose macOS launcher stub can't run as Node) and
+     * rely on the client resolving it from PATH; Claudian, which runs Claude Code,
+     * already augments PATH to find Node.
      */
     private stdioSpec(): StdioServerSpec | null {
         const base = this.vaultBasePath();
@@ -169,9 +170,8 @@ export default class GitHubReviewPlugin extends Plugin {
             return null;
         }
         return {
-            command: process.execPath,
+            command: "node",
             args: [join(base, dir, "mcp-stdio.js"), join(base, dir, "context.json")],
-            env: { ELECTRON_RUN_AS_NODE: "1" },
         };
     }
 

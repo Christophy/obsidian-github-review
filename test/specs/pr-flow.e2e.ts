@@ -750,28 +750,33 @@ describe("GitHub Review – review flows (stubbed network)", function () {
         expect(typeof mcpFile).toBe("string");
         const parsed = JSON.parse(mcpFile as string);
         const entry = parsed.mcpServers["github-review"];
-        expect(typeof entry.command).toBe("string"); // Obsidian's own binary (Electron-as-node)
-        expect(entry.env.ELECTRON_RUN_AS_NODE).toBe("1");
+        // spawn bare `node` (the client resolves it from PATH); NOT Obsidian's own
+        // binary, whose macOS launcher stub can't run as Node -> "Connection closed".
+        expect(entry.command).toBe("node");
+        expect(entry.env).toBe(undefined);
         expect(entry.alwaysLoad).toBe(true);
         expect(parsed._claudian.servers["github-review"].contextSaving).toBe(false);
         const serverAbs: string = entry.args[0]; // the plugin wrote mcp-stdio.js here
         const storeAbs: string = entry.args[1];
 
-        // the store is keyed by ref (so projects don't conflate) with #7 current
+        // the plugin actually wrote the server file at the path the config points to
         const fs = await import("node:fs/promises");
+        await fs.access(serverAbs);
+
+        // the store is keyed by ref (so projects don't conflate) with #7 current
         const store = JSON.parse(await fs.readFile(storeAbs, "utf8"));
         expect(store.current).toBe("acme/widgets/pull/7");
         expect(typeof store.items["acme/widgets/pull/7"].item).toBe("string");
 
-        // the runtime-written stdio server serves the store over MCP (spawned via Node)
+        // the runtime-written stdio server serves the store over MCP, spawned EXACTLY
+        // as the written config tells the client to (bare `node` resolved from PATH).
         const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
         const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
         const client = new Client({ name: "e2e", version: "1.0.0" });
         await client.connect(
             new StdioClientTransport({
-                // eslint-disable-next-line no-undef -- the wdio runner is Node; process is a Node global
-                command: process.execPath,
-                args: [serverAbs, storeAbs],
+                command: entry.command as string,
+                args: entry.args as string[],
             }),
         );
         try {
